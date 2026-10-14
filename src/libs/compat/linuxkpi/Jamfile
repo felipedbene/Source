@@ -1,0 +1,52 @@
+SubDir HAIKU_TOP src libs compat linuxkpi ;
+
+# FreeBSD's LinuxKPI on top of freebsd_network/freebsd_wlan, for drivers that
+# use the Linux kernel API (rtw88, ...). Upstream sources live in common/ and
+# are kept unmodified; Haiku-specific code lives in haiku/.
+
+# The haiku/compat headers must come first: they shadow some freebsd_network
+# headers (sys/pcpu.h, sys/proc.h, sys/sx.h, sys/kthread.h) for LinuxKPI only.
+UseHeaders [ FDirName $(SUBDIR) haiku compat ] : true ;
+# As on FreeBSD: the real headers, then stubs for the ones LinuxKPI lacks.
+UseHeaders [ FDirName $(SUBDIR) common include ] : true ;
+UseHeaders [ FDirName $(SUBDIR) dummy include ] : true ;
+UseHeaders [ FDirName $(HAIKU_TOP) src libs compat freebsd_network compat ]
+	: true ;
+UseHeaders [ FDirName $(HAIKU_TOP) src libs compat freebsd_wlan ] : true ;
+# Some LinuxKPI headers include each other by FreeBSD source tree path
+# (<compat/linuxkpi/common/include/...>), which this resolves.
+UseHeaders [ FDirName $(HAIKU_TOP) src libs ] : true ;
+UsePrivateHeaders net ;
+UsePrivateKernelHeaders ;
+UseHeaders $(HAIKU_PRIVATE_KERNEL_HEADERS) : true ;
+
+local kconfig = [ FDirName $(SUBDIR) common include linux kconfig.h ] ;
+SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 LINUXKPI_VERSION=70000 ]
+	-include $(kconfig) ;
+SubDirC++Flags [ FDefines _KERNEL=1 ] ;
+
+SEARCH_SOURCE += [ FDirName $(SUBDIR) haiku ] ;
+SEARCH_SOURCE += [ FDirName $(SUBDIR) common src ] ;
+
+KernelStaticLibrary linuxkpi.a :
+	# Haiku implementations of FreeBSD kernel APIs LinuxKPI needs
+	lkpi_sx.c
+	lkpi_thread.c
+	uma.c
+
+	# FreeBSD kernel sources LinuxKPI needs
+	fbsd_subr_pctrie.c
+
+	# LinuxKPI proper (common/src) is enabled file by file as it is brought up
+	# on Haiku. In bring-up order:
+	#	linux_lock.c linux_current.c linux_kthread.c linux_work.c
+	#	linux_tasklet.c linux_rcu.c linux_schedule.c linux_hrtimer.c
+	#	linux_timesub.c linux_math.c linux_slab.c linux_page.c linux_idr.c
+	#	linux_radix.c linux_xarray.c linux_compat.c linux_devres.c
+	#	linux_kobject.c linux_firmware.c linux_interrupt.c linux_pci.c
+	#	linux_seq_buf.c linux_seq_file.c linux_simple_attr.c
+	#	linux_netdev.c linux_skbuff.c
+	;
+
+# Once linuxkpi.a is complete, the mac80211 shim goes into its own library:
+#	KernelStaticLibrary linuxkpi_wlan.a : linux_80211.c linux_80211_macops.c ;
