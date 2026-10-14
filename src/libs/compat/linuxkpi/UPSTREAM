@@ -1,0 +1,18 @@
+common/ is FreeBSD's sys/compat/linuxkpi/common, unmodified:
+
+	https://github.com/freebsd/freebsd-src
+	commit c30a321a61ce7e1c03d4c314b2127b37f75564c6 (2026-10-14)
+
+dummy/ is sys/compat/linuxkpi/dummy from the same commit, unmodified: stub
+headers searched after common/include, as in FreeBSD's kmod.mk.
+
+Only the sources needed for PCIe wifi drivers (rtw88) were imported; the
+remaining common/src files (USB, I2C, HDMI, ACPI, DMI, shmemfs, ...) were left
+out on purpose. All of common/include was imported, as headers pull in each
+other freely.
+
+haiku/fbsd_subr_pctrie.c and haiku/compat/sys/{pctrie,_pctrie}.h are FreeBSD's
+sys/kern/subr_pctrie.c and sys/sys/{pctrie,_pctrie}.h from the same commit,
+unmodified.
+
+To update, copy the same file set from a newer commit and rebuild.
