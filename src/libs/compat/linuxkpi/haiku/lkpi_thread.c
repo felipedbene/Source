@@ -1,0 +1,356 @@
+/*
+ * SPDX-License-Identifier: MIT
+ *
+ * Copyright 2026, Haiku, Inc. All rights reserved.
+ * Distributed under the terms of the MIT License.
+ */
+
+/*
+ * Shadow struct thread for LinuxKPI.
+ *
+ * LinuxKPI needs curthread to be a stable, per-thread struct thread: it stores
+ * "current" (td_lkpi_task) in it and records it as sx lock owner. Haiku has no
+ * such structure we may use, so we keep one shadow per Haiku thread that enters
+ * LinuxKPI, in a hash table keyed by thread_id. Haiku thread IDs increase
+ * monotonically, so a stale entry can never be mistaken for a new thread.
+ *
+ * Haiku offers drivers no thread-death notification. A reaper thread
+ * periodically drops shadows of threads that no longer exist and fires the
+ * thread_dtor event, which is how linux_current.c frees task_structs (as it
+ * does on FreeBSD). Reaping never happens from curthread itself, as the
+ * dtor handlers may need locks the caller already holds.
+ */
+
+#include <sys/param.h>
+#include <sys/kernel.h>
+#include <sys/malloc.h>
+#include <sys/proc.h>
+#include <sys/kthread.h>
+#include <sys/eventhandler.h>
+#include <sys/systm.h>
+
+#include <KernelExport.h>
+#include <string.h>
+
+#include <interrupts.h>
+
+/* From the kernel's private <smp.h>, which can only be included from C++. */
+int32 smp_get_num_cpus(void);
+int32 smp_get_current_cpu(void);
+
+
+#define LKPI_THREAD_HASH_SIZE		128		/* must be a power of two */
+#define LKPI_THREAD_REAP_INTERVAL	2000000	/* usecs */
+
+#ifndef RFSTOPPED
+#define RFSTOPPED	(1 << 17)
+#endif
+
+
+MALLOC_DEFINE(M_LKPI_THREAD, "lkpithread", "LinuxKPI shadow threads");
+
+SLIST_HEAD(lkpi_thread_list, thread);
+
+static struct lkpi_thread_list sThreadHash[LKPI_THREAD_HASH_SIZE];
+static spinlock sThreadHashLock = B_SPINLOCK_INITIALIZER;
+
+static struct proc sKernelProc = { .p_pid = B_SYSTEM_TEAM };
+static struct ucred sRootCred = { .cr_uid = 0 };
+
+/* Handed out when no shadow exists yet and we cannot allocate one because
+ * interrupts are disabled. Nothing can preempt the caller on that CPU until
+ * interrupts are enabled again, so sharing one per CPU is safe. Allocated in
+ * lkpi_thread_sysinit(), one per CPU. */
+static struct thread* sFallbackThreads;
+
+static thread_id sReaperThread = -1;
+static volatile bool sReaperQuit;
+
+
+static inline struct lkpi_thread_list*
+lkpi_thread_bucket(thread_id id)
+{
+	return &sThreadHash[(uint32)id & (LKPI_THREAD_HASH_SIZE - 1)];
+}
+
+
+static struct thread*
+lkpi_thread_lookup_locked(thread_id id)
+{
+	struct thread* td;
+
+	SLIST_FOREACH(td, lkpi_thread_bucket(id), td_hash_link) {
+		if (td->td_tid == id)
+			return td;
+	}
+	return NULL;
+}
+
+
+static struct thread*
+lkpi_thread_lookup(thread_id id)
+{
+	struct thread* td;
+	cpu_status state = disable_interrupts();
+	acquire_spinlock(&sThreadHashLock);
+	td = lkpi_thread_lookup_locked(id);
+	release_spinlock(&sThreadHashLock);
+	restore_interrupts(state);
+	return td;
+}
+
+
+static void
+lkpi_thread_init_shadow(struct thread* td, thread_id id, const char* name)
+{
+	thread_info info;
+
+	memset(td, 0, sizeof(*td));
+	td->td_tid = id;
+	td->td_proc = &sKernelProc;
+	td->td_ucred = &sRootCred;
+
+	if (name == NULL && get_thread_info(id, &info) == B_OK)
+		name = info.name;
+	if (name != NULL)
+		strlcpy(td->td_name, name, sizeof(td->td_name));
+}
+
+
+/* Inserts td unless a shadow for its thread already exists. Returns the shadow
+ * that is in the table; td is freed if it lost the race. */
+static struct thread*
+lkpi_thread_insert(struct thread* td)
+{
+	struct thread* existing;
+	cpu_status state = disable_interrupts();
+	acquire_spinlock(&sThreadHashLock);
+	existing = lkpi_thread_lookup_locked(td->td_tid);
+	if (existing == NULL)
+		SLIST_INSERT_HEAD(lkpi_thread_bucket(td->td_tid), td, td_hash_link);
+	release_spinlock(&sThreadHashLock);
+	restore_interrupts(state);
+
+	if (existing != NULL) {
+		free(td, M_LKPI_THREAD);
+		return existing;
+	}
+	return td;
+}
+
+
+struct thread*
+lkpi_curthread(void)
+{
+	thread_id id = find_thread(NULL);
+	struct thread* td = lkpi_thread_lookup(id);
+	if (td != NULL)
+		return td;
+
+	if (!are_interrupts_enabled()) {
+		if (sFallbackThreads == NULL)
+			panic("lkpi_curthread: called with interrupts disabled before init");
+		td = &sFallbackThreads[smp_get_current_cpu()];
+		td->td_tid = id;
+		td->td_proc = &sKernelProc;
+		td->td_ucred = &sRootCred;
+		return td;
+	}
+
+	td = malloc(sizeof(*td), M_LKPI_THREAD, M_WAITOK);
+	if (td == NULL)
+		panic("lkpi_curthread: out of memory");
+	lkpi_thread_init_shadow(td, id, NULL);
+	return lkpi_thread_insert(td);
+}
+
+
+bool
+lkpi_thread_can_sleep(void)
+{
+	return are_interrupts_enabled();
+}
+
+
+static void
+lkpi_thread_free(struct thread* td)
+{
+	EVENTHANDLER_INVOKE(thread_dtor, td);
+	free(td, M_LKPI_THREAD);
+}
+
+
+/* Removes and frees the shadows of all threads for which isDead() holds.
+ * Only the reaper (and uninit, after the reaper is gone) remove entries, and
+ * inserts only ever prepend, so a bucket can be walked without the lock. */
+static void
+lkpi_thread_reap(bool all)
+{
+	thread_info info;
+	int i;
+
+	for (i = 0; i < LKPI_THREAD_HASH_SIZE; i++) {
+		struct thread* td;
+		struct thread* next;
+		cpu_status state;
+
+		state = disable_interrupts();
+		acquire_spinlock(&sThreadHashLock);
+		td = SLIST_FIRST(&sThreadHash[i]);
+		release_spinlock(&sThreadHashLock);
+		restore_interrupts(state);
+
+		for (; td != NULL; td = next) {
+			next = SLIST_NEXT(td, td_hash_link);
+			if (!all && get_thread_info(td->td_tid, &info) == B_OK)
+				continue;
+
+			state = disable_interrupts();
+			acquire_spinlock(&sThreadHashLock);
+			SLIST_REMOVE(&sThreadHash[i], td, thread, td_hash_link);
+			release_spinlock(&sThreadHashLock);
+			restore_interrupts(state);
+
+			lkpi_thread_free(td);
+		}
+	}
+}
+
+
+static status_t
+lkpi_thread_reaper(void* data __unused)
+{
+	while (!sReaperQuit) {
+		snooze(LKPI_THREAD_REAP_INTERVAL);
+		lkpi_thread_reap(false);
+	}
+	return B_OK;
+}
+
+
+static void
+lkpi_thread_sysinit(void* arg __unused)
+{
+	sFallbackThreads = malloc(sizeof(struct thread) * smp_get_num_cpus(),
+		M_LKPI_THREAD, M_WAITOK | M_ZERO);
+	if (sFallbackThreads == NULL)
+		panic("lkpi_thread_sysinit: out of memory");
+
+	sReaperQuit = false;
+	sReaperThread = spawn_kernel_thread(lkpi_thread_reaper, "lkpi thread reaper",
+		B_LOW_PRIORITY, NULL);
+	if (sReaperThread >= 0)
+		resume_thread(sReaperThread);
+}
+SYSINIT(lkpi_thread, SI_SUB_EVENTHANDLER, SI_ORDER_FIRST, lkpi_thread_sysinit,
+	NULL);
+
+
+static void
+lkpi_thread_sysuninit(void* arg __unused)
+{
+	status_t result;
+
+	if (sReaperThread >= 0) {
+		sReaperQuit = true;
+		wait_for_thread(sReaperThread, &result);
+		sReaperThread = -1;
+	}
+	lkpi_thread_reap(true);
+
+	free(sFallbackThreads, M_LKPI_THREAD);
+	sFallbackThreads = NULL;
+}
+SYSUNINIT(lkpi_thread, SI_SUB_EVENTHANDLER, SI_ORDER_FIRST,
+	lkpi_thread_sysuninit, NULL);
+
+
+/* #pragma mark - kthreads */
+
+
+struct lkpi_kthread_args {
+	void	(*func)(void*);
+	void*	arg;
+};
+
+
+static status_t
+lkpi_kthread_trampoline(void* data)
+{
+	struct lkpi_kthread_args args = *(struct lkpi_kthread_args*)data;
+	free(data, M_LKPI_THREAD);
+
+	args.func(args.arg);
+	return B_OK;
+}
+
+
+int
+lkpi_kthread_add(void (*func)(void*), void* arg, void* p __unused,
+	struct thread** newtdp, int flags, int pages __unused, const char* fmt, ...)
+{
+	struct lkpi_kthread_args* args;
+	struct thread* td;
+	char name[B_OS_NAME_LENGTH];
+	thread_id id;
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(name, sizeof(name), fmt, ap);
+	va_end(ap);
+
+	args = malloc(sizeof(*args), M_LKPI_THREAD, M_WAITOK);
+	td = malloc(sizeof(*td), M_LKPI_THREAD, M_WAITOK);
+	if (args == NULL || td == NULL) {
+		free(args, M_LKPI_THREAD);
+		free(td, M_LKPI_THREAD);
+		return ENOMEM;
+	}
+	args->func = func;
+	args->arg = arg;
+
+	/* Kernel threads are spawned suspended, so the shadow is in the table
+	 * before the thread can run and look itself up. */
+	id = spawn_kernel_thread(lkpi_kthread_trampoline, name, B_NORMAL_PRIORITY,
+		args);
+	if (id < 0) {
+		free(args, M_LKPI_THREAD);
+		free(td, M_LKPI_THREAD);
+		return ENOMEM;
+	}
+
+	lkpi_thread_init_shadow(td, id, name);
+	td->td_pflags |= TDP_KTHREAD;
+	td->td_priority = B_NORMAL_PRIORITY;
+	td = lkpi_thread_insert(td);
+
+	if (newtdp != NULL)
+		*newtdp = td;
+	if ((flags & RFSTOPPED) == 0)
+		resume_thread(id);
+	return 0;
+}
+
+
+void
+lkpi_sched_prio(struct thread* td, u_char prio)
+{
+	/* freebsd_network's PI_* priorities are already Haiku priorities. */
+	td->td_priority = prio;
+	set_thread_priority(td->td_tid, prio);
+}
+
+
+void
+lkpi_sched_add(struct thread* td, int flags __unused)
+{
+	resume_thread(td->td_tid);
+}
+
+
+void
+lkpi_kthread_exit(void)
+{
+	/* The shadow is freed by the reaper once the thread is gone. */
+	exit_thread(B_OK);
+}
