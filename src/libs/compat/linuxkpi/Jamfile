@@ -48,6 +48,7 @@ KernelStaticLibrary linuxkpi.a :
 	lkpi_gtaskqueue.c
 	lkpi_machdep.c
 	lkpi_malloc.c
+	lkpi_pci.c
 	lkpi_sched.cpp
 	lkpi_sleepqueue.c
 	lkpi_time.c

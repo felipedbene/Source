@@ -17,6 +17,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/malloc.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
 
@@ -362,21 +363,24 @@ pmap_unmapdev(void* va __unused, vm_size_t size __unused)
 }
 
 
+/*
+ * dma_alloc_coherent() lands here; this must really work. Haiku's
+ * contiguous allocator honors the range/alignment/boundary constraints
+ * (freebsd_network's _kernel_contigmalloc on create_area).
+ */
 vm_offset_t
-kmem_alloc_contig(vm_size_t size __unused, int flags __unused,
-	vm_paddr_t low __unused, vm_paddr_t high __unused,
-	u_long alignment __unused, vm_paddr_t boundary __unused,
-	vm_memattr_t memattr __unused)
+kmem_alloc_contig(vm_size_t size, int flags, vm_paddr_t low, vm_paddr_t high,
+	u_long alignment, vm_paddr_t boundary, vm_memattr_t memattr __unused)
 {
-	LKPI_VM_UNSUPPORTED();
-	return 0;
+	return (vm_offset_t)_kernel_contigmalloc("lkpi_kmem", __LINE__, size,
+		flags, low, high, alignment, boundary);
 }
 
 
 void
-kmem_free(void* addr __unused, vm_size_t size __unused)
+kmem_free(void* addr, vm_size_t size)
 {
-	LKPI_VM_UNSUPPORTED();
+	_kernel_contigfree(addr, size);
 }
 
 
