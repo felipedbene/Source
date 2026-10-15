@@ -164,6 +164,53 @@ vm_page_initfake(vm_page_t page __unused, vm_paddr_t paddr __unused,
 }
 
 
+void
+vm_page_updatefake(vm_page_t page __unused, vm_paddr_t paddr __unused,
+	vm_memattr_t memattr __unused)
+{
+	LKPI_VM_UNSUPPORTED();
+}
+
+
+vm_page_t
+vm_page_getfake(vm_paddr_t paddr __unused, vm_memattr_t memattr __unused)
+{
+	LKPI_VM_UNSUPPORTED();
+	return NULL;
+}
+
+
+void
+vm_page_putfake(vm_page_t page __unused)
+{
+	LKPI_VM_UNSUPPORTED();
+}
+
+
+vm_page_t
+vm_page_replace(vm_page_t mnew __unused, struct vm_object* object __unused,
+	vm_pindex_t pindex __unused, vm_page_t mold __unused)
+{
+	LKPI_VM_UNSUPPORTED();
+	return NULL;
+}
+
+
+void
+vm_page_iter_limit_init(struct pctrie_iter* pages __unused,
+	struct vm_object* object __unused, unsigned long limit __unused)
+{
+	/* no VM object ever holds pages here; iteration finds none */
+}
+
+
+void
+pmap_remove_all(struct vm_page* page __unused)
+{
+	LKPI_VM_UNSUPPORTED();
+}
+
+
 int
 vm_page_busy_acquire(vm_page_t page __unused, int allocflags __unused)
 {

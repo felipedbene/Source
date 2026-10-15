@@ -24,5 +24,12 @@
 
 extern int mp_ncores;
 
+/* Runs action on every CPU and waits; on Haiku via call_all_cpus()
+ * (lkpi_sched.cpp). setup/teardown run on each CPU around it, as on
+ * FreeBSD. */
+void smp_rendezvous(void (*setup)(void* arg), void (*action)(void* arg),
+	void (*teardown)(void* arg), void* arg);
+void smp_no_rendezvous_barrier(void* arg);
+
 
 #endif /* _LKPI_HAIKU_SYS_SMP_H_ */

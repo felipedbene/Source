@@ -27,6 +27,7 @@ struct vm_page* pmap_extract_and_hold(void* pmap, vm_offset_t va,
 bool pmap_page_is_mapped(struct vm_page* page);
 void* pmap_mapdev_attr(vm_paddr_t pa, vm_size_t size, vm_memattr_t attr);
 void pmap_unmapdev(void* va, vm_size_t size);
+void pmap_remove_all(struct vm_page* page);
 
 
 #endif /* _LKPI_HAIKU_VM_PMAP_H_ */

@@ -22,6 +22,9 @@ driver_t* device_get_driver(device_t dev);
 devclass_t devclass_create(const char* classname);
 int device_probe_and_attach(device_t dev);
 
+/* NULL on this port: the Linux root device attaches to no newbus parent. */
+extern device_t root_bus;
+
 #define bus_topo_lock()		do { } while (0)
 #define bus_topo_unlock()	do { } while (0)
 #define bus_topo_assert()	do { } while (0)

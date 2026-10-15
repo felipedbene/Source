@@ -30,5 +30,10 @@ bool vm_map_range_valid(struct vm_map* map, vm_offset_t start,
 int vm_fault_quick_hold_pages(struct vm_map* map, vm_offset_t addr,
 	vm_size_t len, vm_prot_t prot, struct vm_page** ma, int max_count);
 
+struct thread;
+int vm_mmap_object(struct vm_map* map, vm_offset_t* addr, vm_size_t size,
+	vm_prot_t prot, vm_prot_t maxprot, int flags, vm_object_t object,
+	vm_ooffset_t foff, int writecounted, struct thread* td);
+
 
 #endif /* _LKPI_HAIKU_VM_VM_MAP_H_ */

@@ -164,6 +164,10 @@ static inline int sysctl_handle_string(SYSCTL_HANDLER_ARGS) { return -1; }
 	sysctl_add_oid(ctx, parent, nbr, name, CTLTYPE_NODE|(access),		\
 	0, 0, handler, "N", __DESCR(descr))
 
+#define SYSCTL_ADD_ROOT_NODE(ctx, nbr, name, access, handler, descr)	\
+	sysctl_add_oid(ctx, NULL, nbr, name, CTLTYPE_NODE|(access),		\
+	0, 0, handler, "N", __DESCR(descr))
+
 #define SYSCTL_ADD_STRING(ctx, parent, nbr, name, access, arg, len, descr)	\
 	sysctl_add_oid(ctx, parent, nbr, name, CTLTYPE_STRING|(access),			\
 	arg, len, sysctl_handle_string, "A", __DESCR(descr))

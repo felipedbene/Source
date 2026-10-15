@@ -16,4 +16,17 @@
 #include <sys/pctrie.h>
 
 
+struct vm_object;
+struct vm_page;
+
+/* No VM object ever holds pages on this port, so iteration finds none
+ * (lkpi_vm.c). */
+void vm_page_iter_limit_init(struct pctrie_iter* pages,
+	struct vm_object* object, unsigned long limit);
+
+#define VM_RADIX_FOREACH_FROM(m, pages, start) \
+	for ((m) = ((void)(pages), (void)(start), (struct vm_page*)0); \
+		(m) != (struct vm_page*)0; )
+
+
 #endif /* _LKPI_HAIKU_VM_VM_RADIX_H_ */

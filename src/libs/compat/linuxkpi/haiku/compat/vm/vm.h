@@ -65,9 +65,10 @@ typedef struct vm_page* vm_page_t;
 #define OFF_TO_IDX(off)		((vm_pindex_t)((off) >> PAGE_SHIFT))
 #define IDX_TO_OFF(idx)		(((vm_ooffset_t)(idx)) << PAGE_SHIFT)
 
-/* Haiku/x86_64's kernel address range (kernel_arch_config.h). */
+/* Haiku/x86_64's address ranges (kernel_arch_config.h). */
 #define VM_MIN_KERNEL_ADDRESS	0xffff800000000000ul
 #define VM_MAX_KERNEL_ADDRESS	0xfffffffffffffffful
+#define VM_MAXUSER_ADDRESS		0x0000800000000000ul
 
 
 #endif /* _LKPI_HAIKU_VM_VM_H_ */

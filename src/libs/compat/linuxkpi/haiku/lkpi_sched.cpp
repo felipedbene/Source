@@ -11,6 +11,7 @@
  * current CPU, exactly like Haiku's pinned_to_cpu count.
  */
 
+#include <smp.h>
 #include <thread.h>
 
 
@@ -87,4 +88,52 @@ extern "C" void
 lkpi_vm_counters_init(void)
 {
 	physmem = (long)vm_page_num_pages();
+}
+
+
+/*
+ * FreeBSD's smp_rendezvous(): run action on every CPU and wait for all
+ * of them. Haiku's call_all_cpus_sync() does exactly that; the per-CPU
+ * setup/teardown hooks wrap the action like on FreeBSD.
+ */
+struct lkpi_rendezvous_args {
+	void (*setup)(void* arg);
+	void (*action)(void* arg);
+	void (*teardown)(void* arg);
+	void* arg;
+};
+
+extern "C" void smp_no_rendezvous_barrier(void* arg);
+extern "C" void smp_rendezvous(void (*setup)(void* arg),
+	void (*action)(void* arg), void (*teardown)(void* arg), void* arg);
+
+
+extern "C" void
+smp_no_rendezvous_barrier(void* arg)
+{
+	(void)arg;
+}
+
+
+static void
+lkpi_rendezvous_trampoline(void* cookie, int cpu)
+{
+	struct lkpi_rendezvous_args* args = (struct lkpi_rendezvous_args*)cookie;
+	(void)cpu;
+
+	if (args->setup != NULL && args->setup != smp_no_rendezvous_barrier)
+		args->setup(args->arg);
+	if (args->action != NULL)
+		args->action(args->arg);
+	if (args->teardown != NULL && args->teardown != smp_no_rendezvous_barrier)
+		args->teardown(args->arg);
+}
+
+
+extern "C" void
+smp_rendezvous(void (*setup)(void* arg), void (*action)(void* arg),
+	void (*teardown)(void* arg), void* arg)
+{
+	struct lkpi_rendezvous_args args = { setup, action, teardown, arg };
+	call_all_cpus_sync(lkpi_rendezvous_trampoline, &args);
 }

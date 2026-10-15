@@ -17,8 +17,12 @@
 
 
 struct vm_object {
-	int	dummy;
+	void*			handle;
+	vm_memattr_t	memattr;
+	int				flags;		/* OBJ_* */
 };
+
+#define OBJ_UNMANAGED	0x0001
 
 #define VM_OBJECT_WLOCK(object)			do { } while (0)
 #define VM_OBJECT_WUNLOCK(object)		do { } while (0)
@@ -28,6 +32,7 @@ struct vm_object {
 #define VM_OBJECT_ASSERT_LOCKED(object)		do { } while (0)
 
 void vm_object_deallocate(vm_object_t object);
+int vm_object_set_memattr(vm_object_t object, vm_memattr_t memattr);
 
 /* No pages ever belong to it here; only identity comparisons. */
 extern struct vm_object lkpi_kernel_object_store;

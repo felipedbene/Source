@@ -519,6 +519,13 @@ lkpi_mi_switch(int flags __unused)
 
 
 void
+kern_yield(int prio __unused)
+{
+	thread_yield();
+}
+
+
+void
 lkpi_sched_add(struct thread* td, int flags __unused)
 {
 	resume_thread(td->td_tid);

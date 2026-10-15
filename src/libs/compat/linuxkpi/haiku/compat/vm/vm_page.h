@@ -71,6 +71,12 @@ int vm_page_reclaim_contig(int req, u_long npages, vm_paddr_t low,
 	vm_paddr_t high, u_long alignment, vm_paddr_t boundary);
 void vm_page_initfake(vm_page_t page, vm_paddr_t paddr,
 	vm_memattr_t memattr);
+void vm_page_updatefake(vm_page_t page, vm_paddr_t paddr,
+	vm_memattr_t memattr);
+vm_page_t vm_page_getfake(vm_paddr_t paddr, vm_memattr_t memattr);
+void vm_page_putfake(vm_page_t page);
+vm_page_t vm_page_replace(vm_page_t mnew, struct vm_object* object,
+	vm_pindex_t pindex, vm_page_t mold);
 int vm_page_busy_acquire(vm_page_t page, int allocflags);
 
 struct pctrie_iter;

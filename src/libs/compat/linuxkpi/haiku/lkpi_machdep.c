@@ -13,6 +13,7 @@
 #include <sys/param.h>
 #include <sys/cpuset.h>
 #include <sys/interrupt.h>
+#include <sys/jail.h>
 #include <sys/kernel.h>
 #include <sys/libkern.h>
 #include <sys/lock.h>
@@ -35,6 +36,11 @@
 u_int cpu_feature = 0;
 u_int cpu_feature2 = 0;
 u_int cpu_stdext_feature = 0;
+u_int cpu_id = 0;
+u_int cpu_vendor_id = 0;		/* unknown: vendor paths are skipped */
+u_int cpu_clflush_line_size = 64;
+
+char osrelease[OSRELEASELEN] = "RenkuOS";
 
 /*
  * Like freebsd_network's mp_ncpus (smp.c), a fixed conservative value;
@@ -114,6 +120,73 @@ struct lock_class lkpi_lock_class_noop = {
 	.lc_assert = lkpi_lc_assert_noop,
 	.lc_owner = lkpi_lc_owner_held,
 };
+
+
+/*
+ * FreeBSD's reentrant kernel qsort; Haiku's kernel has no qsort_r
+ * export, so sort here (plain recursive quicksort - the only user is
+ * list_sort(), on short wait lists).
+ */
+static void
+lkpi_qsort_r(char* base, size_t nmemb, size_t size,
+	int (*compar)(const void*, const void*, void*), void* thunk,
+	char* swapbuf)
+{
+	size_t pivot, i, store;
+
+	while (nmemb > 1) {
+		pivot = nmemb / 2;
+
+		memcpy(swapbuf, base + pivot * size, size);
+		memcpy(base + pivot * size, base + (nmemb - 1) * size, size);
+		memcpy(base + (nmemb - 1) * size, swapbuf, size);
+
+		store = 0;
+		for (i = 0; i < nmemb - 1; i++) {
+			if (compar(base + i * size, base + (nmemb - 1) * size,
+					thunk) < 0) {
+				if (i != store) {
+					memcpy(swapbuf, base + i * size, size);
+					memcpy(base + i * size, base + store * size, size);
+					memcpy(base + store * size, swapbuf, size);
+				}
+				store++;
+			}
+		}
+		memcpy(swapbuf, base + store * size, size);
+		memcpy(base + store * size, base + (nmemb - 1) * size, size);
+		memcpy(base + (nmemb - 1) * size, swapbuf, size);
+
+		/* recurse into the smaller half, loop on the larger */
+		if (store < nmemb - store - 1) {
+			lkpi_qsort_r(base, store, size, compar, thunk, swapbuf);
+			base += (store + 1) * size;
+			nmemb -= store + 1;
+		} else {
+			lkpi_qsort_r(base + (store + 1) * size, nmemb - store - 1,
+				size, compar, thunk, swapbuf);
+			nmemb = store;
+		}
+	}
+}
+
+
+void
+qsort_r(void* base, size_t nmemb, size_t size,
+	int (*compar)(const void*, const void*, void*), void* thunk)
+{
+	char stackbuf[64];
+	char* swapbuf = stackbuf;
+
+	if (size > sizeof(stackbuf)) {
+		swapbuf = _kernel_malloc(size, 0);
+		if (swapbuf == NULL)
+			panic("qsort_r: element too large");
+	}
+	lkpi_qsort_r(base, nmemb, size, compar, thunk, swapbuf);
+	if (swapbuf != stackbuf)
+		_kernel_free(swapbuf);
+}
 
 
 char*

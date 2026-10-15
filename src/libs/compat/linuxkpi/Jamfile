@@ -28,7 +28,9 @@ local prelude = [ FDirName $(SUBDIR) haiku compat lkpi_prelude.h ] ;
 local kconfig = [ FDirName $(SUBDIR) common include linux kconfig.h ] ;
 # implicit-function-declaration is an error here: after the prelude's atomic
 # renames a stray bare atomic_add() would otherwise only warn, then fail to link.
-SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 LINUXKPI_VERSION=70000 ]
+# NOTE: no LINUXKPI_VERSION here - FreeBSD defines it per *driver* module
+# (rtw88 uses 70000); the linuxkpi library itself builds without it.
+SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 ]
 	-include $(prelude) -include $(kconfig)
 	-Werror=implicit-function-declaration ;
 SubDirC++Flags [ FDefines _KERNEL=1 ] ;
@@ -39,6 +41,7 @@ SEARCH_SOURCE += [ FDirName $(SUBDIR) ck src ] ;
 
 KernelStaticLibrary linuxkpi.a :
 	# Haiku implementations of FreeBSD kernel APIs LinuxKPI needs
+	lkpi_cdev.c
 	lkpi_gtaskqueue.c
 	lkpi_machdep.c
 	lkpi_malloc.c
@@ -80,7 +83,8 @@ KernelStaticLibrary linuxkpi.a :
 	linux_simple_attr.c
 	linux_netdev.c
 	linux_skbuff.c
-	#	linux_compat.c linux_pci.c
+	linux_compat.c
+	#	linux_pci.c
 	;
 
 # Once linuxkpi.a is complete, the mac80211 shim goes into its own library:

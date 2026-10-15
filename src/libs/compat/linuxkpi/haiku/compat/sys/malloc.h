@@ -25,6 +25,10 @@
 #define WOULD_OVERFLOW(nmemb, size) \
 	((size) != 0 && (nmemb) > SIZE_MAX / (size))
 
+#define mallocarray(nmemb, size, type, flags) \
+	(WOULD_OVERFLOW(nmemb, size) \
+		? NULL : malloc((nmemb) * (size), type, flags))
+
 /* No NUMA domains on Haiku. */
 #define malloc_domainset(size, type, policy, flags) \
 	malloc(size, type, flags)

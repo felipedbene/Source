@@ -62,7 +62,8 @@ struct thread {
 	sigset_t		td_siglist;
 	sigset_t		td_sigmask;
 	struct {
-		sigset_t	ksi_dummy;
+		u_int		code;		/* syscall number; always 0 here */
+		long		args[8];
 	}				td_sa;
 	void*			td_fpop;
 	struct task_struct*	td_lkpi_task;
@@ -108,6 +109,7 @@ struct thread* tdfind(lwpid_t tid, pid_t pid);
 struct proc* pfind(pid_t pid);
 void thread_reap_barrier(void);
 int linux_alloc_current_noop(struct thread* td, int flags);
+void kern_yield(int prio);
 
 /* FreeBSD's per-thread lock, as one global spinlock over all shadow
  * threads (only linux_rcu.c's priority boosting takes it). */

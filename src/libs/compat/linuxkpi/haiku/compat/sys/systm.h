@@ -34,6 +34,11 @@ extern long physmem;
 int copyin_nofault(const void* uaddr, void* kaddr, size_t len);
 int copyout_nofault(const void* kaddr, void* uaddr, size_t len);
 
+/* user-memory byte/word stores; no user memory behind LinuxKPI here
+ * (lkpi_cdev.c stubs fail) */
+int subyte(volatile void* base, int byte);
+int suword64(volatile void* base, int64_t word);
+
 #ifndef __assert_unreachable
 #	define __assert_unreachable() \
 		do { \

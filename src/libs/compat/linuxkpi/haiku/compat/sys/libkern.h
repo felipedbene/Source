@@ -82,6 +82,10 @@ strchrnul(const char* p, int ch)
 }
 
 
+/* FreeBSD's reentrant kernel qsort (lkpi_machdep.c). */
+void qsort_r(void* base, size_t nmemb, size_t size,
+	int (*compar)(const void*, const void*, void*), void* thunk);
+
 /* The kernel exports these (src/system/kernel/lib) but no kernel header
  * declares them for C. */
 long strtol(const char* cp, char** endp, int base);
