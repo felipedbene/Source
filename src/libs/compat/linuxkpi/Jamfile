@@ -84,7 +84,7 @@ KernelStaticLibrary linuxkpi.a :
 	linux_netdev.c
 	linux_skbuff.c
 	linux_compat.c
-	#	linux_pci.c
+	linux_pci.c
 	;
 
 # Once linuxkpi.a is complete, the mac80211 shim goes into its own library:

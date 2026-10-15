@@ -236,6 +236,10 @@ SYSCTL_CHILDREN(void *ptr)
 #define SYSCTL_UINT(...)
 #define SYSCTL_BOOL(...)
 #define SYSCTL_PROC(...)
+#define SYSCTL_COUNTER_U64(...)
+#define SYSCTL_ULONG(...)
+#define SYSCTL_LONG(...)
+#define SYSCTL_STRING(...)
 
 
 #endif /* _LKPI_HAIKU_SYS_SYSCTL_H_ */
