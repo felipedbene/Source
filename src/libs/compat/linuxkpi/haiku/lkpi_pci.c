@@ -23,6 +23,7 @@
 #include <sys/bus_dma.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
+#include <sys/rman.h>
 #include <sys/systm.h>
 
 #include <dev/pci/pcivar.h>
@@ -111,6 +112,66 @@ int
 lkpi_pci_registered_driver_count(void)
 {
 	return sRegisteredDriverCount;
+}
+
+
+static struct resource_list_entry*
+lkpi_resource_list_add(struct resource_list* rl, int type, int rid,
+	struct resource* res, rman_res_t start, rman_res_t count)
+{
+	struct resource_list_entry* rle;
+
+	rle = _kernel_malloc(sizeof(*rle), M_ZERO);
+	if (rle == NULL)
+		return NULL;
+	rle->type = type;
+	rle->rid = rid;
+	rle->res = res;
+	rle->start = start;
+	rle->end = start + (count != 0 ? count - 1 : 0);
+	rle->count = count;
+	STAILQ_INSERT_TAIL(&rl->rl_list, rle, link);
+	return rle;
+}
+
+
+/*
+ * linux_pci.c reads a FreeBSD pci_devinfo through device_get_ivars()
+ * (PCIe capability for pci_is_root_bus(), the MSI registers, the BAR
+ * resource list, the interrupt line). freebsd_network never sets ivars
+ * on PCI devices, so the glue calls this before dispatching attach.
+ */
+void
+lkpi_pci_provide_devinfo(device_t dev)
+{
+	struct pci_devinfo* dinfo;
+	int reg;
+
+	if (device_get_ivars(dev) != NULL)
+		return;
+
+	dinfo = _kernel_malloc(sizeof(*dinfo), M_ZERO);
+	if (dinfo == NULL)
+		return;
+
+	STAILQ_INIT(&dinfo->resources.rl_list);
+
+	if (pci_find_cap(dev, PCIY_EXPRESS, &reg) == 0) {
+		dinfo->cfg.pcie.pcie_location = reg;
+		dinfo->cfg.pcie.pcie_type =
+			pci_read_config(dev, reg + 2, 2) & 0x00f0;
+	}
+	if (pci_find_cap(dev, PCIY_MSI, &reg) == 0) {
+		dinfo->cfg.msi.msi_location = reg;
+		dinfo->cfg.msi.msi_ctrl = pci_read_config(dev, reg + 2, 2);
+	}
+
+	/* the legacy interrupt line; linux_pci_attach_device() hands it to
+	 * pdev->irq, which request_irq() later resolves */
+	lkpi_resource_list_add(&dinfo->resources, SYS_RES_IRQ, 0, NULL,
+		pci_read_config(dev, PCIR_INTLINE, 1), 1);
+
+	device_set_ivars(dev, dinfo);
 }
 
 
@@ -322,20 +383,40 @@ pci_find_bar(device_t dev, int reg)
 }
 
 
+/*
+ * BAR reservation: freebsd_network's bus_alloc_resource() maps the BAR
+ * and stores the mapped address as the bus handle, which is exactly what
+ * LinuxKPI's pci_iomap() reads back out of the resource.
+ */
 struct resource*
-pci_reserve_map(device_t dev __unused, device_t child __unused,
-	int type __unused, int* rid __unused, rman_res_t start __unused,
-	rman_res_t end __unused, rman_res_t count __unused, u_int num __unused,
-	u_int flags __unused)
+pci_reserve_map(device_t dev __unused, device_t child, int type, int* rid,
+	rman_res_t start __unused, rman_res_t end __unused,
+	rman_res_t count __unused, u_int num __unused, u_int flags __unused)
 {
-	return NULL;
+	struct pci_devinfo* dinfo = device_get_ivars(child);
+	struct resource* res;
+
+	res = bus_alloc_resource(child, type, rid, 0, ~0, 1, RF_ACTIVE);
+	if (res == NULL || dinfo == NULL)
+		return res;
+
+	lkpi_resource_list_add(&dinfo->resources, type, *rid, res,
+		rman_get_start(res), rman_get_size(res));
+	return res;
 }
 
 
 struct resource_list_entry*
-resource_list_find(struct resource_list* rl __unused, int type __unused,
-	int rid __unused)
+resource_list_find(struct resource_list* rl, int type, int rid)
 {
+	struct resource_list_entry* rle;
+
+	if (rl == NULL)
+		return NULL;
+	STAILQ_FOREACH(rle, &rl->rl_list, link) {
+		if (rle->type == type && rle->rid == rid)
+			return rle;
+	}
 	return NULL;
 }
 

@@ -38,6 +38,7 @@ NO_HAIKU_REENABLE_INTERRUPTS();
 NO_HAIKU_CHECK_DISABLE_INTERRUPTS();
 
 int lkpi_pci_dispatch(device_t dev, int id);
+void lkpi_pci_provide_devinfo(device_t dev);
 
 
 static const struct {
@@ -66,6 +67,7 @@ rtw88_probe(device_t dev)
 static int
 rtw88_attach(device_t dev)
 {
+	lkpi_pci_provide_devinfo(dev);
 	return lkpi_pci_dispatch(dev, ID_device_attach);
 }
 
