@@ -1,0 +1,21 @@
+dev/rtw88/ is FreeBSD's sys/contrib/dev/rtw88, unmodified:
+
+	https://github.com/freebsd/freebsd-src
+	commit c30a321a61ce7e1c03d4c314b2127b37f75564c6 (2026-10-14)
+
+Only the RTL8821C PCIe subset is imported (the 16 core files plus
+rtw8821c*, pci.c and rtw8821ce.c, and the headers they include); other
+chips, SDIO, USB, PM (wow.c, lkpi_rtw88_pm.c) and led.c are left out on
+purpose, mirroring sys/modules/rtw88/Makefile with RTW88_PCI=1 and
+everything else 0. CONFIG_RTW88_DEBUGFS is off (FreeBSD routes it
+through lindebugfs, which this port has no equivalent of).
+
+Driver license: the rtw88 files are dual-licensed (per-file SPDX
+"GPL-2.0 OR BSD-3-Clause"-style headers, Copyright Realtek Corporation);
+they are used here under the BSD terms. Firmware is NOT included - the
+driver requests "rtw88/rtw8821c_fw.bin"; see glue.c's
+HAIKU_FIRMWARE_NAME_MAP. The blob (from linux-firmware, redistributable
+per LICENCE.rtlwifi_firmware.txt) belongs in
+<data dir>/firmware/rtw88/rtw8821c_fw.bin.
+
+To update, copy the same file set from a newer commit and rebuild.
