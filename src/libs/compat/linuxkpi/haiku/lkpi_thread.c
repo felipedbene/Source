@@ -397,7 +397,12 @@ lkpi_thread_sysinit(void* arg __unused)
 	if (sReaperThread >= 0)
 		resume_thread(sReaperThread);
 }
-SYSINIT(lkpi_thread, SI_SUB_EVENTHANDLER, SI_ORDER_FIRST, lkpi_thread_sysinit,
+/* SI_SUB_LOCK, not SI_SUB_EVENTHANDLER: the compat sysinit runner keeps
+ * only the bucket order and runs same-bucket entries in link order even
+ * on uninit, so this must sit in an earlier bucket than linux_current.c's
+ * SI_SUB_EVENTHANDLER - its uninit takes allproc_lock and PROC_LOCK,
+ * which the uninit here destroys (rtw88 bring-up crash #9). */
+SYSINIT(lkpi_thread, SI_SUB_LOCK, SI_ORDER_FIRST, lkpi_thread_sysinit,
 	NULL);
 
 
@@ -419,7 +424,7 @@ lkpi_thread_sysuninit(void* arg __unused)
 	free(sFallbackThreads, M_LKPI_THREAD);
 	sFallbackThreads = NULL;
 }
-SYSUNINIT(lkpi_thread, SI_SUB_EVENTHANDLER, SI_ORDER_FIRST,
+SYSUNINIT(lkpi_thread, SI_SUB_LOCK, SI_ORDER_FIRST,
 	lkpi_thread_sysuninit, NULL);
 
 
