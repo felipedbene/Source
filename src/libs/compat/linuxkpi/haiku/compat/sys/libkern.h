@@ -59,6 +59,20 @@ ilog2_long_long(long long n)
 #define bitcount64(x)	((unsigned)__builtin_popcountll((uint64_t)(x)))
 #define bitcountl(x)	((unsigned)__builtin_popcountl((u_long)(x)))
 
+static __inline u_long
+ulmin(u_long a, u_long b)
+{
+	return (a < b ? a : b);
+}
+
+
+static __inline u_long
+ulmax(u_long a, u_long b)
+{
+	return (a > b ? a : b);
+}
+
+
 static __inline char*
 strchrnul(const char* p, int ch)
 {

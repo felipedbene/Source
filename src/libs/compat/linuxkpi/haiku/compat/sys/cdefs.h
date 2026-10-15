@@ -41,6 +41,8 @@
  * <sys/tree.h> uses them. */
 typedef __UINTPTR_TYPE__	__uintptr_t;
 typedef __INTPTR_TYPE__		__intptr_t;
+/* __size_t is handled in lkpi_prelude.h: gcc's <stddef.h> defines it as
+ * an empty macro on Haiku. */
 
 /* POSIX's __CONCAT pastes without expanding its arguments; FreeBSD's
  * expands them first, and <linux/cleanup.h> depends on that. */

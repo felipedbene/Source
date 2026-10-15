@@ -41,6 +41,9 @@
 	for ((i) = 0; (i) <= (int)mp_maxid; (i)++)
 
 extern cpuset_t all_cpus;
+extern cpuset_t* cpuset_root;		/* the root set: all CPUs */
+
+#define CPU_WHICH_IRQ	5	/* an irq number, as FreeBSD numbers it */
 
 
 #endif /* _LKPI_HAIKU_SYS_CPUSET_H_ */

@@ -29,5 +29,9 @@
 
 #define PI_SWI(x)	(B_REAL_TIME_DISPLAY_PRIORITY - 8 - (x))
 
+/* IRQ affinity is a hint; the implementation (lkpi_machdep.c) reports
+ * ENOSYS, like Linux without affinity support. */
+int intr_setaffinity(int irq, int mode, void* mask);
+
 
 #endif /* _LKPI_HAIKU_SYS_INTERRUPT_H_ */

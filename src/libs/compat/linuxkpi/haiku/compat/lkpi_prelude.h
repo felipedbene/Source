@@ -27,6 +27,15 @@
  * LinuxKPI's <asm/types.h> as unsigned short. Nothing on the Haiku/FreeBSD
  * side of a LinuxKPI translation unit uses it.
  */
+/*
+ * On Haiku, gcc's <stddef.h> defines __size_t as an EMPTY macro (a BeOS
+ * relic), which breaks FreeBSD's <sys/bitset.h>. Parse it now, then make
+ * __size_t mean what FreeBSD expects.
+ */
+#include <stddef.h>
+#undef __size_t
+#define __size_t			__SIZE_TYPE__
+
 #define umode_t				__haiku_umode_t
 
 /*

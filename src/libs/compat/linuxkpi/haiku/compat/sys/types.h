@@ -23,5 +23,13 @@ typedef __INT64_TYPE__ quad_t;
  * (phys_addr_t, which is not defined yet here either). */
 typedef __UINT64_TYPE__ vm_paddr_t;
 
+/* BSD legacy dev_t split; only <linux/kdev_t.h>'s old_encode_dev()
+ * uses them here. */
+#ifndef major
+#	define major(d)		((int)(((unsigned)(d) >> 8) & 0xff))
+#	define minor(d)		((int)((d) & 0xffff00ff))
+#	define makedev(M, m)	((dev_t)(((M) << 8) | (m)))
+#endif
+
 
 #endif /* _LKPI_HAIKU_SYS_TYPES_H_ */

@@ -18,6 +18,7 @@
 
 void pmap_invalidate_cache(void);
 void pmap_force_invalidate_cache_range(vm_offset_t start, vm_offset_t end);
+int pmap_change_attr(vm_offset_t va, vm_size_t size, int memattr);
 
 
 #endif /* _LKPI_HAIKU_VM_PMAP_H_ */

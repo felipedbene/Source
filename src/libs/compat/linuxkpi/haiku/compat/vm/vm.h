@@ -49,5 +49,16 @@ typedef char vm_memattr_t;
 
 typedef struct vm_page* vm_page_t;
 
+/*
+ * No direct map on Haiku. LinuxKPI tests PMAP_HAS_DMAP at runtime, so
+ * the macros must compile; reaching the conversions is a bug.
+ */
+#define PMAP_HAS_DMAP		0
+#define PHYS_IN_DMAP(pa)	0
+#define PHYS_TO_DMAP(pa) \
+	({ panic("PHYS_TO_DMAP: no direct map"); (vm_offset_t)0; })
+#define DMAP_TO_PHYS(va) \
+	({ panic("DMAP_TO_PHYS: no direct map"); (vm_paddr_t)0; })
+
 
 #endif /* _LKPI_HAIKU_VM_VM_H_ */

@@ -44,5 +44,17 @@ lkpi_pcpu_get_cpuid(void)
 #undef curcpu
 #define curcpu	(lkpi_pcpu_get_cpuid())
 
+/*
+ * FreeBSD's dynamic per-CPU storage, as plain per-TU arrays (LinuxKPI
+ * only uses the _STATIC form). MAXCPU comes via <sys/smp.h> above;
+ * lkpi_machdep.c raises mp_maxid to the real CPU count at load.
+ */
+#define DPCPU_DEFINE_STATIC(type, name) \
+	static type pcpu_entry_##name[MAXCPU]
+#define DPCPU_ID_PTR(cpu, name)	(&pcpu_entry_##name[cpu])
+#define DPCPU_ID_GET(cpu, name)	(pcpu_entry_##name[cpu])
+#define DPCPU_PTR(name)			DPCPU_ID_PTR(curcpu, name)
+#define DPCPU_GET(name)			DPCPU_ID_GET(curcpu, name)
+
 
 #endif /* _LKPI_HAIKU_SYS_PCPU_H_ */
