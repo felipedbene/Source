@@ -3147,6 +3147,25 @@ lkpi_sta_auth_to_run(struct ieee80211vap *vap, enum ieee80211_state nstate, int 
 	return (error);
 }
 
+#if defined(__HAIKU__)
+/*
+ * Haiku's net_server periodically requests scans, which can race an
+ * ongoing handshake: the vap drops AUTH -> SCAN mid-join and net80211
+ * then legally asks for SCAN -> ASSOC, which the FreeBSD table does not
+ * carry. Walk the driver through auth again before associating.
+ */
+static int
+lkpi_sta_scan_to_assoc(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
+{
+	int error;
+
+	error = lkpi_sta_scan_to_auth(vap, nstate, arg);
+	if (error == 0)
+		error = lkpi_sta_auth_to_assoc(vap, nstate, arg);
+	return (error);
+}
+#endif
+
 /* UP4 */
 static int
 lkpi_sta_assoc_to_run(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
@@ -3991,6 +4010,9 @@ struct fsm_state {
 	{ IEEE80211_S_RUN,	IEEE80211_S_AUTH, lkpi_sta_run_to_auth },	/* Send ?AUTH. */
 
 	{ IEEE80211_S_AUTH,	IEEE80211_S_ASSOC, lkpi_sta_auth_to_assoc },	/* UP3.1 Send ASSOCREQ. */
+#if defined(__HAIKU__)
+	{ IEEE80211_S_SCAN,	IEEE80211_S_ASSOC, lkpi_sta_scan_to_assoc },	/* A scan raced the handshake. */
+#endif
 	{ IEEE80211_S_ASSOC,	IEEE80211_S_ASSOC, lkpi_sta_a_to_a },		/* Send ASSOCREQ. */
 	{ IEEE80211_S_RUN,	IEEE80211_S_ASSOC, lkpi_sta_run_to_assoc },	/* DOWN1 Send ASSOCREQ/REASSOCREQ. */
 
