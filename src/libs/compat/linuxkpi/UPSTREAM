@@ -18,4 +18,9 @@ LinuxKPI's <linux/rbtree.h> builds the Linux rb-tree API on, and
 haiku/compat/sys/{_bitset,bitset,_cpuset,cpuset}.h (cpuset_t, whose layout
 linux_compat.c's cpumask code relies on).
 
+ck/ is the ck_epoch slice of FreeBSD's sys/contrib/ck (concurrencykit,
+BSD-2-Clause) from the same commit, unmodified: src/ck_epoch.c plus its
+header closure (include/ck_*.h, include/gcc/{,x86_64/}ck_*.h). linux_rcu.c
+implements RCU on it. Only the x86_64 gcc backend is imported.
+
 To update, copy the same file set from a newer commit and rebuild.
