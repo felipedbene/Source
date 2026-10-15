@@ -21,6 +21,7 @@
 #include <sys/bus.h>
 #include <sys/kernel.h>
 
+#include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>
 
 #include <linux/pci.h>
@@ -35,7 +36,20 @@ HAIKU_FIRMWARE_NAME_MAP({
 
 NO_HAIKU_FBSD_MII_DRIVER();
 NO_HAIKU_REENABLE_INTERRUPTS();
-NO_HAIKU_CHECK_DISABLE_INTERRUPTS();
+
+/*
+ * The hard-irq hook for LinuxKPI interrupts. LinuxKPI installs its
+ * handler without a FreeBSD filter, so freebsd_network routes the
+ * hardware interrupt here first. The MSI vector is exclusive to this
+ * device, and the Linux hard-irq handler (rtw_pci_interrupt_handler,
+ * run next from the interrupt thread) masks the chip's interrupt
+ * sources itself - so just claim the interrupt.
+ */
+int
+HAIKU_CHECK_DISABLE_INTERRUPTS(device_t dev)
+{
+	return 1;
+}
 
 int lkpi_pci_dispatch(device_t dev, int id);
 void lkpi_pci_provide_devinfo(device_t dev);
@@ -64,11 +78,24 @@ rtw88_probe(device_t dev)
 }
 
 
+/* rtw88's debug trace mask (module parameter on Linux). */
+extern unsigned int rtw_debug_mask;
+
 static int
 rtw88_attach(device_t dev)
 {
+	int error;
+
+	/* XXX bring-up diagnostic: driver tracing without the register
+	 * I/O spam (RTW_DBG_IO_RW floods the syslog ring). */
+	rtw_debug_mask = 0xffffffff & ~0x10000000;
+
 	lkpi_pci_provide_devinfo(dev);
-	return lkpi_pci_dispatch(dev, ID_device_attach);
+	error = lkpi_pci_dispatch(dev, ID_device_attach);
+	/* XXX bring-up diagnostic: attach result and busmaster state. */
+	device_printf(dev, "rtw88 attach: %d (pci cmd 0x%04x)\n", error,
+		pci_read_config(dev, PCIR_COMMAND, 2));
+	return error;
 }
 
 
