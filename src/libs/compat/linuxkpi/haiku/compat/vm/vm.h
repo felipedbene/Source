@@ -16,6 +16,21 @@
 #include_next <vm/vm.h>
 
 
+/* On FreeBSD from <machine/param.h>; freebsd_network's <sys/param.h>
+ * only brings PAGE_SHIFT and PAGE_MASK. */
+#ifndef PAGE_SIZE
+#	define PAGE_SIZE	B_PAGE_SIZE
+#endif
+
+typedef size_t vm_size_t;
+typedef uint64 vm_pindex_t;
+typedef int64 vm_ooffset_t;
+
+struct vm_object;
+typedef struct vm_object* vm_object_t;
+struct vm_map;
+typedef struct vm_map* vm_map_t;
+
 typedef u_char vm_prot_t;
 
 #define VM_PROT_NONE		((vm_prot_t) 0x00)

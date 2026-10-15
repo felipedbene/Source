@@ -32,9 +32,19 @@ struct ucred {
 
 struct proc {
 	pid_t			p_pid;			/* Haiku team id of the kernel team */
+	int				p_flag;			/* P_*; the kernel team never exits */
 	sigset_t		p_siglist;
 	struct vmspace*	p_vmspace;		/* always NULL: no user address spaces */
 };
+
+#define P_WEXIT		0x02000			/* working on exiting (never set) */
+
+/*
+ * Every pid LinuxKPI sees here is a Haiku thread id (task->pid = td_tid),
+ * so steer linux_current.c's "pid or tid?" split (pid > PID_MAX) to the
+ * tdfind() branch for every valid id.
+ */
+#define PID_MAX		0
 
 struct thread {
 	lwpid_t			td_tid;			/* Haiku thread_id */
@@ -81,7 +91,39 @@ bool lkpi_thread_can_sleep(void);
 /* LinuxKPI's hook for lazily creating "current"; linux_current.c sets it
  * (FreeBSD declares it in its base sys/proc.h). Defined in lkpi_thread.c. */
 extern int (*lkpi_alloc_current)(struct thread* td, int flags);
+
+/*
+ * The process-table slice of FreeBSD's <sys/proc.h> that linux_current.c
+ * uses, on the one kernel proc and the shadow-thread table
+ * (lkpi_thread.c). PROC_LOCK is the shadow table's spinlock, so nothing
+ * may sleep under it - the FreeBSD code holding it only runs atomics.
+ * tdfind() and pfind() return with the proc locked, as on FreeBSD.
+ */
+void lkpi_proc_lock(struct proc* p);
+void lkpi_proc_unlock(struct proc* p);
+struct proc* lkpi_allproc_first(void);
+struct thread* lkpi_proc_thread_first(struct proc* p);
+struct thread* lkpi_proc_thread_next(struct thread* td);
+struct thread* tdfind(lwpid_t tid, pid_t pid);
+struct proc* pfind(pid_t pid);
+void thread_reap_barrier(void);
+int linux_alloc_current_noop(struct thread* td, int flags);
+
+/* Locked around the (one-entry) process list, as FreeBSD's is. */
+struct sx;
+extern struct sx allproc_lock;
 __END_DECLS
+
+#define PROC_LOCK(p)			lkpi_proc_lock(p)
+#define PROC_UNLOCK(p)			lkpi_proc_unlock(p)
+#define PROC_LOCK_ASSERT(p, what)	do { } while (0)
+
+#define FOREACH_THREAD_IN_PROC(p, td)					\
+	for ((td) = lkpi_proc_thread_first(p); (td) != NULL;	\
+		(td) = lkpi_proc_thread_next(td))
+
+#define FOREACH_PROC_IN_SYSTEM(p)						\
+	for ((p) = lkpi_allproc_first(); (p) != NULL; (p) = NULL)
 
 #define THREAD_NO_SLEEPING()	do { } while (0)
 #define THREAD_SLEEPING_OK()	do { } while (0)

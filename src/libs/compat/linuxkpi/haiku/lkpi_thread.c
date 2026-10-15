@@ -28,6 +28,7 @@
 #include <sys/kthread.h>
 #include <sys/eventhandler.h>
 #include <sys/rtprio.h>
+#include <sys/sx.h>
 #include <sys/systm.h>
 
 #include <KernelExport.h>
@@ -98,6 +99,108 @@ lkpi_thread_lookup(thread_id id)
 	release_spinlock(&sThreadHashLock);
 	restore_interrupts(state);
 	return td;
+}
+
+
+/*
+ * PROC_LOCK on the one kernel proc is the shadow-table spinlock, so
+ * FOREACH_THREAD_IN_PROC can walk the table under it. The saved interrupt
+ * state is protected by the spinlock itself: it is written after
+ * acquiring and read back before releasing.
+ */
+static cpu_status sProcLockCpuState;
+
+
+void
+lkpi_proc_lock(struct proc* p __unused)
+{
+	cpu_status state = disable_interrupts();
+	acquire_spinlock(&sThreadHashLock);
+	sProcLockCpuState = state;
+}
+
+
+void
+lkpi_proc_unlock(struct proc* p __unused)
+{
+	cpu_status state = sProcLockCpuState;
+	release_spinlock(&sThreadHashLock);
+	restore_interrupts(state);
+}
+
+
+struct thread*
+lkpi_proc_thread_first(struct proc* p __unused)
+{
+	for (int i = 0; i < LKPI_THREAD_HASH_SIZE; i++) {
+		struct thread* td = SLIST_FIRST(&sThreadHash[i]);
+		if (td != NULL)
+			return td;
+	}
+	return NULL;
+}
+
+
+struct thread*
+lkpi_proc_thread_next(struct thread* td)
+{
+	struct thread* next = SLIST_NEXT(td, td_hash_link);
+	if (next != NULL)
+		return next;
+
+	for (uint32 i = ((uint32)td->td_tid & (LKPI_THREAD_HASH_SIZE - 1)) + 1;
+			i < LKPI_THREAD_HASH_SIZE; i++) {
+		next = SLIST_FIRST(&sThreadHash[i]);
+		if (next != NULL)
+			return next;
+	}
+	return NULL;
+}
+
+
+struct thread*
+tdfind(lwpid_t tid, pid_t pid __unused)
+{
+	struct thread* td;
+
+	lkpi_proc_lock(&sKernelProc);
+	td = lkpi_thread_lookup_locked(tid);
+	if (td == NULL)
+		lkpi_proc_unlock(&sKernelProc);
+	return td;
+}
+
+
+struct proc*
+pfind(pid_t pid)
+{
+	if (pid != sKernelProc.p_pid)
+		return NULL;
+	lkpi_proc_lock(&sKernelProc);
+	return &sKernelProc;
+}
+
+
+struct proc*
+lkpi_allproc_first(void)
+{
+	return &sKernelProc;
+}
+
+
+/* All shadow threads belong to the one kernel proc. Initialized in
+ * lkpi_thread_sysinit(). */
+struct sx allproc_lock;
+
+
+void
+thread_reap_barrier(void)
+{
+	/* Reaping stays single-threaded (see lkpi_thread_reap); waiting out a
+	 * full reaper cycle guarantees any pass that had started before this
+	 * call - and the thread_dtor handlers it fires - has finished. */
+	if (sReaperThread >= 0)
+		snooze(2 * LKPI_THREAD_REAP_INTERVAL);
 }
 
 
@@ -237,6 +340,8 @@ lkpi_thread_sysinit(void* arg __unused)
 	if (sFallbackThreads == NULL)
 		panic("lkpi_thread_sysinit: out of memory");
 
+	sx_init(&allproc_lock, "allproc");
+
 	sReaperQuit = false;
 	sReaperThread = spawn_kernel_thread(lkpi_thread_reaper, "lkpi thread reaper",
 		B_LOW_PRIORITY, NULL);
@@ -258,6 +363,8 @@ lkpi_thread_sysuninit(void* arg __unused)
 		sReaperThread = -1;
 	}
 	lkpi_thread_reap(true);
+
+	sx_destroy(&allproc_lock);
 
 	free(sFallbackThreads, M_LKPI_THREAD);
 	sFallbackThreads = NULL;
@@ -333,14 +440,14 @@ lkpi_kthread_add(void (*func)(void*), void* arg, void* p __unused,
 }
 
 
-static int
-lkpi_alloc_current_noop(struct thread* td __unused, int flags __unused)
+int
+linux_alloc_current_noop(struct thread* td __unused, int flags __unused)
 {
 	return ENOTSUP;
 }
 
 /* linux_current.c points this at linux_alloc_current() while it is loaded. */
-int (*lkpi_alloc_current)(struct thread*, int) = lkpi_alloc_current_noop;
+int (*lkpi_alloc_current)(struct thread*, int) = linux_alloc_current_noop;
 
 
 void

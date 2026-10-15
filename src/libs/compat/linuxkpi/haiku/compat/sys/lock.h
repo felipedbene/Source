@@ -41,5 +41,11 @@ extern struct lock_class lkpi_lock_class_noop;
 
 #define LOCK_CLASS(lock)	(&lkpi_lock_class_noop)
 
+/* No witness here; the checks vanish like on a FreeBSD kernel without
+ * WITNESS. */
+#define WARN_GIANTOK	0x01
+#define WARN_SLEEPOK	0x02
+#define WITNESS_WARN(flags, lock, fmt, ...)	do { } while (0)
+
 
 #endif /* _LKPI_HAIKU_SYS_LOCK_H_ */

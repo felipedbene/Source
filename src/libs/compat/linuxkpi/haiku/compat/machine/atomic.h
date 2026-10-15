@@ -122,6 +122,12 @@ __lkpi_atomic_fcmpset_64(volatile void* ptr, int64* old, int64 newValue)
 #define	atomic_store_rel_ptr	atomic_store_64
 
 
+#define atomic_thread_fence_acq()		__atomic_thread_fence(__ATOMIC_ACQUIRE)
+#define atomic_thread_fence_rel()		__atomic_thread_fence(__ATOMIC_RELEASE)
+#define atomic_thread_fence_acq_rel()	__atomic_thread_fence(__ATOMIC_ACQ_REL)
+#define atomic_thread_fence_seq_cst()	__atomic_thread_fence(__ATOMIC_SEQ_CST)
+
+
 #define mb()    memory_full_barrier()
 #define wmb()   memory_write_barrier()
 #define rmb()   memory_read_barrier()

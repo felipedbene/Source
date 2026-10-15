@@ -28,5 +28,14 @@ struct vm_page {
 
 vm_page_t PHYS_TO_VM_PAGE(vm_paddr_t pa);
 
+/* Declared so <linux/mm.h>'s inlines compile; implemented if something
+ * on the rtw88 path turns out to use them (nothing does). */
+void vm_page_dirty(vm_page_t page);
+void vm_page_reference(vm_page_t page);
+void vm_page_wire(vm_page_t page);
+bool vm_page_unwire(vm_page_t page, int queue);
+int vm_page_tryxbusy(vm_page_t page);
+void vm_page_xunbusy(vm_page_t page);
+
 
 #endif /* _LKPI_HAIKU_VM_VM_PAGE_H_ */

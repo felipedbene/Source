@@ -21,6 +21,9 @@
 #define SCHEDULER_STOPPED()	0
 #define kdb_active			0
 
+/* Total physical memory in pages; lkpi_machdep.c. */
+extern long physmem;
+
 /* Declared so <linux/uaccess.h>'s inlines compile; implemented when
  * something on the rtw88 path turns out to use them (nothing does). */
 int copyin_nofault(const void* uaddr, void* kaddr, size_t len);

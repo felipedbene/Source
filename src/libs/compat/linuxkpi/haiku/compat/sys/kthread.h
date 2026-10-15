@@ -20,9 +20,6 @@
 
 #define SRQ_BORING	0
 
-#define SWI_NET		0
-#define PI_SWI(x)	(PI_SOFT)
-
 __BEGIN_DECLS
 int lkpi_kthread_add(void (*func)(void*), void* arg, void* p,
 	struct thread** newtdp, int flags, int pages, const char* fmt, ...);

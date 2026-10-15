@@ -34,6 +34,12 @@ u_int cpu_stdext_feature = 0;
  */
 int mp_ncores = 1;
 
+/*
+ * Total physical memory in pages. Only si_meminfo() (linux_page.c)
+ * reports it; fill from vm_page_num_pages() when that file is brought up.
+ */
+long physmem = 0;
+
 
 static void
 lkpi_lc_assert_noop(const struct lock_object* lock __unused, int what __unused)

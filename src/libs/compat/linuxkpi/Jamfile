@@ -49,7 +49,9 @@ KernelStaticLibrary linuxkpi.a :
 	# LinuxKPI proper (common/src) is enabled file by file as it is brought up
 	# on Haiku. In bring-up order:
 	linux_lock.c
-	#	linux_current.c linux_kthread.c linux_work.c
+	linux_current.c
+	linux_kthread.c
+	linux_work.c
 	#	linux_tasklet.c linux_rcu.c linux_schedule.c linux_hrtimer.c
 	#	linux_timesub.c linux_math.c linux_slab.c linux_page.c linux_idr.c
 	#	linux_radix.c linux_xarray.c linux_compat.c linux_devres.c

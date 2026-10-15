@@ -5,7 +5,7 @@
  * Distributed under the terms of the MIT License.
  */
 #ifndef _LKPI_HAIKU_VM_VM_PARAM_H_
-#define _LKPI_HAIKU_VM_PARAM_H_
+#define _LKPI_HAIKU_VM_VM_PARAM_H_
 
 /*
  * FreeBSD <vm/vm_param.h> placeholder: everything LinuxKPI uses from it

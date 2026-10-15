@@ -18,5 +18,10 @@
 /* Parsed from inside <SupportDefs.h>, before int64 exists. */
 typedef __INT64_TYPE__ quad_t;
 
+/* LinuxKPI's <asm/types.h> needs vm_paddr_t without going through
+ * <vm/vm.h>; same type as freebsd_network's typedef there
+ * (phys_addr_t, which is not defined yet here either). */
+typedef __UINT64_TYPE__ vm_paddr_t;
+
 
 #endif /* _LKPI_HAIKU_SYS_TYPES_H_ */

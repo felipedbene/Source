@@ -5,7 +5,7 @@
  * Distributed under the terms of the MIT License.
  */
 #ifndef _LKPI_HAIKU_VM_VM_KERN_H_
-#define _LKPI_HAIKU_VM_KERN_H_
+#define _LKPI_HAIKU_VM_VM_KERN_H_
 
 /*
  * FreeBSD <vm/vm_kern.h> placeholder. kmem_* declarations are added here
