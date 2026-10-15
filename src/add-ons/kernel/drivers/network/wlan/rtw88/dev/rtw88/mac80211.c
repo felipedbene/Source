@@ -95,10 +95,15 @@ static int rtw_ops_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL)
 		rtw_set_channel(rtwdev);
 
+#if !defined(__HAIKU__)
+	/* XXX Haiku bring-up: leaving IPS re-downloads the firmware, which
+	 * is still unreliable on this port - a failed wake leaves the radio
+	 * dead until reboot. Keep the chip powered instead of entering IPS. */
 	if ((changed & IEEE80211_CONF_CHANGE_IDLE) &&
 	    (hw->conf.flags & IEEE80211_CONF_IDLE) &&
 	    !test_bit(RTW_FLAG_SCANNING, rtwdev->flags))
 		rtw_enter_ips(rtwdev);
+#endif
 
 out:
 	mutex_unlock(&rtwdev->mutex);
