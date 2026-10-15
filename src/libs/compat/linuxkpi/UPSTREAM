@@ -13,6 +13,9 @@ other freely.
 
 haiku/fbsd_subr_pctrie.c and haiku/compat/sys/{pctrie,_pctrie}.h are FreeBSD's
 sys/kern/subr_pctrie.c and sys/sys/{pctrie,_pctrie}.h from the same commit,
-unmodified.
+unmodified. So are haiku/compat/sys/tree.h (FreeBSD's sys/sys/tree.h), which
+LinuxKPI's <linux/rbtree.h> builds the Linux rb-tree API on, and
+haiku/compat/sys/{_bitset,bitset,_cpuset,cpuset}.h (cpuset_t, whose layout
+linux_compat.c's cpumask code relies on).
 
 To update, copy the same file set from a newer commit and rebuild.
