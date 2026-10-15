@@ -1538,7 +1538,15 @@ int rtw_power_on(struct rtw_dev *rtwdev)
 	rtw_fw_send_general_info(rtwdev);
 	rtw_fw_send_phydm_info(rtwdev);
 
+#if defined(__HAIKU__)
+	/* XXX Haiku bring-up: there is no BT driver to feed the coexistence
+	 * state machine, and its antenna switching has been observed leaving
+	 * the radio deaf while associated (empty scans, rssi_min=255). Run
+	 * WiFi-only: antenna fixed to WLAN, coex dynamics stopped. */
+	wifi_only = true;
+#else
 	wifi_only = !rtwdev->efuse.btcoex;
+#endif
 	rtw_coex_power_on_setting(rtwdev);
 	rtw_coex_init_hw_config(rtwdev, wifi_only);
 

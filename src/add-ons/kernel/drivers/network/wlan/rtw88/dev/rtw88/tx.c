@@ -210,6 +210,20 @@ void rtw_tx_report_purge_timer(struct timer_list *t)
 	 */
 	rtw_dbg(rtwdev, RTW_DBG_TX, "failed to get tx report from firmware: "
 	    "txreport qlen %u\n", qlen);
+
+#if defined(__HAIKU__)
+	/* XXX Haiku bring-up diagnostic: this timer fires exactly when the
+	 * TX path wedges while still associated - dump interrupt mask/status
+	 * and the BE TX ring indexes to see whether TX-done interrupts died
+	 * (register addresses from pci.h; PCIe only, which is all we have). */
+	rtw_warn(rtwdev,
+	    "txrpt purge: himr0 %08x hisr0 %08x himr1 %08x hisr1 %08x "
+	    "himr3 %08x beq_idx %08x mgmtq_idx %08x\n",
+	    rtw_read32(rtwdev, 0x0B0), rtw_read32(rtwdev, 0x0B4),
+	    rtw_read32(rtwdev, 0x0B8), rtw_read32(rtwdev, 0x0BC),
+	    rtw_read32(rtwdev, 0x10B8),
+	    rtw_read32(rtwdev, 0x3A8), rtw_read32(rtwdev, 0x3B0));
+#endif
 #endif
 }
 
