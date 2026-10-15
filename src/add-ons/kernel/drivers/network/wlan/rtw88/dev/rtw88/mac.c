@@ -675,6 +675,48 @@ download_firmware_to_mem(struct rtw_dev *rtwdev, const u8 *data,
 		if (ret)
 			return ret;
 
+#if defined(__HAIKU__)
+		/* XXX bring-up diagnostic: what actually landed in TXBUF?
+		 * Window the page in via the pktbuf debug control and compare
+		 * the payload (past the tx desc) with what we sent. */
+		{
+			const u32 *want = (const u32 *)(data + mem_offset);
+			u32 bad = 0, first_off = 0, got0 = 0, want0 = 0;
+			u32 addr, got;
+			int lastpg = -1;
+			u32 k;
+
+			mdelay(1);
+			/* TX FIFO starts at debug page 0x780 (4 KB pages).
+			 * Compare the whole deposited payload. */
+			rtw_write32_set(rtwdev, REG_RCR, BIT_DISGCLK);
+			for (k = 0; k < pkt_size; k += 4) {
+				addr = src + desc_size + k;
+				if ((int)(addr >> 12) != lastpg) {
+					lastpg = addr >> 12;
+					rtw_write16(rtwdev,
+					    REG_PKTBUF_DBG_CTRL,
+					    0x780 + lastpg);
+				}
+				got = rtw_read32(rtwdev,
+				    0x8000 + (addr & 0xfff));
+				if (got != want[k / 4]) {
+					if (bad == 0) {
+						first_off = k;
+						got0 = got;
+						want0 = want[k / 4];
+					}
+					bad++;
+				}
+			}
+			rtw_write32_clr(rtwdev, REG_RCR, BIT_DISGCLK);
+			rtw_err(rtwdev,
+			    "txbuf verify: off 0x%x len 0x%x: %u bad, first at 0x%x got %08x want %08x ddma 0x%08x\n",
+			    mem_offset, pkt_size, bad, first_off, got0,
+			    want0, rtw_read32(rtwdev, REG_DDMA_CH0CTRL));
+		}
+#endif
+
 		ret = iddma_download_firmware(rtwdev, OCPBASE_TXBUF_88XX +
 					      src + desc_size,
 					      dst + mem_offset, pkt_size,
@@ -992,6 +1034,20 @@ int rtw_download_firmware(struct rtw_dev *rtwdev, struct rtw_fw_state *fw)
 	int ret;
 
 	ret = _rtw_download_firmware(rtwdev, fw);
+#if defined(__HAIKU__)
+	/* XXX Haiku bring-up: the download intermittently fails its DDMA
+	 * checksum on this port (cause not yet understood); a retry has
+	 * always succeeded. Retry a couple of times before giving up. */
+	{
+		int tries;
+
+		for (tries = 0; ret != 0 && tries < 3; tries++) {
+			rtw_warn(rtwdev, "firmware download retry %d\n",
+			    tries + 1);
+			ret = _rtw_download_firmware(rtwdev, fw);
+		}
+	}
+#endif
 	if (ret)
 		return ret;
 
