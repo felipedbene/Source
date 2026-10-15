@@ -3860,6 +3860,9 @@ lkpi_sta_a_to_a(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 	LKPI_80211_LVIF_LOCK(lvif);
 	/* XXX-BZ KASSERT later? */
 	if (!lvif->lvif_bss_synched || lvif->lvif_bss == NULL) {
+#if defined(__HAIKU__)
+		bool have_stale = (lvif->lvif_bss != NULL);
+#endif
 #ifdef LINUXKPI_DEBUG_80211
 		ic_printf(vap->iv_ic, "%s:%d: lvif %p vap %p iv_bss %p lvif_bss %p "
 		    "lvif_bss->ni %p synched %d\n", __func__, __LINE__,
@@ -3868,8 +3871,27 @@ lkpi_sta_a_to_a(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 		    lvif->lvif_bss_synched);
 #endif
 		LKPI_80211_LVIF_UNLOCK(lvif);
+#if defined(__HAIKU__)
+		/*
+		 * net_server re-enters AUTH with a swapped bss: the user's
+		 * join may pick a different bssid than the pre-auth did
+		 * (common with mesh APs broadcasting several). Instead of
+		 * giving up, rebuild the driver state for the current
+		 * iv_bss: tear the stale station down to SCAN level (when
+		 * there is one) and come back up to AUTH.
+		 */
+		wiphy_unlock(hw->wiphy);
+		IEEE80211_LOCK(vap->iv_ic);
+		error = 0;
+		if (have_stale)
+			error = lkpi_sta_auth_to_scan(vap, nstate, arg);
+		if (error == 0)
+			error = lkpi_sta_scan_to_auth(vap, nstate, arg);
+		return (error);
+#else
 		error = ENOTRECOVERABLE;
 		goto out;
+#endif
 	}
 	lsta = lvif->lvif_bss;
 	LKPI_80211_LVIF_UNLOCK(lvif);
