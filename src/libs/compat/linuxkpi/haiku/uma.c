@@ -50,30 +50,25 @@ uma_to_oc_flags(int how)
 }
 
 
-static status_t
-zone_object_init(void* cookie, void* object)
+/*
+ * UMA's init-once contract does not survive Haiku's object cache: the slab
+ * stores its free-list link inside free objects, and the KDEBUG_LEVEL 2
+ * paranoia fills overwrite the whole object on both free (0xdeadbeef) and
+ * alloc (0xcccccccc) - any constructed state is destroyed before the object
+ * reaches the caller (this scribbled pctrie nodes, crashes #6/#7). So init
+ * runs on every allocation and fini on every free instead; init functions
+ * are idempotent, so this is correct, just slightly more work per alloc.
+ */
+static int
+zone_item_init(struct uma_zone* zone, void* item, int flags)
 {
-	struct uma_zone* zone = cookie;
-
 	if ((zone->flags & UMA_ZONE_ZINIT) != 0)
-		memset(object, 0, zone->size);
+		memset(item, 0, zone->size);
 
-	/* The object cache may construct objects on behalf of a non-blocking
-	 * allocation, so the init function must not block either. */
-	if (zone->init != NULL && zone->init(object, zone->size, M_NOWAIT) != 0)
-		return B_NO_MEMORY;
+	if (zone->init != NULL && zone->init(item, zone->size, flags) != 0)
+		return ENOMEM;
 
-	return B_OK;
-}
-
-
-static void
-zone_object_fini(void* cookie, void* object)
-{
-	struct uma_zone* zone = cookie;
-
-	if (zone->fini != NULL)
-		zone->fini(object, zone->size);
+	return 0;
 }
 
 
@@ -89,7 +84,6 @@ uma_zcreate(const char* name, size_t size, uma_ctor ctor, uma_dtor dtor,
 	uma_init uminit, uma_fini fini, int align, uint32_t flags)
 {
 	struct uma_zone* zone = zone_alloc();
-	bool needsInit;
 
 	if (zone == NULL)
 		return NULL;
@@ -101,11 +95,11 @@ uma_zcreate(const char* name, size_t size, uma_ctor ctor, uma_dtor dtor,
 	zone->fini = fini;
 	zone->flags = flags;
 
-	/* UMA alignment is a mask, object cache alignment is a byte count. */
-	needsInit = uminit != NULL || (flags & UMA_ZONE_ZINIT) != 0;
+	/* UMA alignment is a mask, object cache alignment is a byte count.
+	 * No cache-level constructor/destructor: the object cache cannot
+	 * preserve constructed state (see zone_item_init() above). */
 	zone->cache = create_object_cache_etc(name, size, (size_t)align + 1, 0, 0,
-		0, 0, zone, needsInit ? zone_object_init : NULL,
-		fini != NULL ? zone_object_fini : NULL, NULL);
+		0, 0, NULL, NULL, NULL, NULL);
 	if (zone->cache == NULL) {
 		_kernel_free(zone);
 		return NULL;
@@ -152,13 +146,14 @@ uma_zdestroy(uma_zone_t zone)
 static void
 zone_item_release(struct uma_zone* zone, void* item)
 {
+	if (zone->fini != NULL)
+		zone->fini(item, zone->size);
+
 	if (zone->cache != NULL) {
 		object_cache_free(zone->cache, item, 0);
 		return;
 	}
 
-	if (zone->fini != NULL)
-		zone->fini(item, zone->size);
 	zone->release(zone->arg, &item, 1);
 }
 
@@ -172,10 +167,14 @@ uma_zalloc_arg(uma_zone_t zone, void* arg, int flags)
 		item = object_cache_alloc(zone->cache, uma_to_oc_flags(flags));
 		if (item == NULL)
 			return NULL;
+		if (zone_item_init(zone, item, flags) != 0) {
+			object_cache_free(zone->cache, item, 0);
+			return NULL;
+		}
 	} else {
 		if (zone->import(zone->arg, &item, 1, UMA_ANYDOMAIN, flags) != 1)
 			return NULL;
-		if (zone->init != NULL && zone->init(item, zone->size, flags) != 0) {
+		if (zone_item_init(zone, item, flags) != 0) {
 			zone->release(zone->arg, &item, 1);
 			return NULL;
 		}
