@@ -65,8 +65,22 @@ struct thread {
 #define TDP_ITHREAD		0x00000002
 #define TDP_KTHREAD		0x00000004
 
+/* FreeBSD AST flags; Haiku gives drivers no pending-reschedule signal, so
+ * td_ast_pending() is never true and need_resched() stays false. */
+#define TDA_SCHED		0
+
+static inline bool
+td_ast_pending(struct thread* td, int ast)
+{
+	return false;
+}
+
 __BEGIN_DECLS
 bool lkpi_thread_can_sleep(void);
+
+/* LinuxKPI's hook for lazily creating "current"; linux_current.c sets it
+ * (FreeBSD declares it in its base sys/proc.h). Defined in lkpi_thread.c. */
+extern int (*lkpi_alloc_current)(struct thread* td, int flags);
 __END_DECLS
 
 #define THREAD_NO_SLEEPING()	do { } while (0)

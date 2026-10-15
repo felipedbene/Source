@@ -20,9 +20,15 @@ UsePrivateHeaders net ;
 UsePrivateKernelHeaders ;
 UseHeaders $(HAIKU_PRIVATE_KERNEL_HEADERS) : true ;
 
+# lkpi_prelude.h must come first: it renames Haiku's atomic_* inlines out of
+# the way of Linux's before any other header can pull in <SupportDefs.h>.
+local prelude = [ FDirName $(SUBDIR) haiku compat lkpi_prelude.h ] ;
 local kconfig = [ FDirName $(SUBDIR) common include linux kconfig.h ] ;
+# implicit-function-declaration is an error here: after the prelude's atomic
+# renames a stray bare atomic_add() would otherwise only warn, then fail to link.
 SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 LINUXKPI_VERSION=70000 ]
-	-include $(kconfig) ;
+	-include $(prelude) -include $(kconfig)
+	-Werror=implicit-function-declaration ;
 SubDirC++Flags [ FDefines _KERNEL=1 ] ;
 
 SEARCH_SOURCE += [ FDirName $(SUBDIR) haiku ] ;
@@ -30,6 +36,9 @@ SEARCH_SOURCE += [ FDirName $(SUBDIR) common src ] ;
 
 KernelStaticLibrary linuxkpi.a :
 	# Haiku implementations of FreeBSD kernel APIs LinuxKPI needs
+	lkpi_machdep.c
+	lkpi_sched.cpp
+	lkpi_time.c
 	lkpi_sx.c
 	lkpi_thread.c
 	uma.c
@@ -39,7 +48,8 @@ KernelStaticLibrary linuxkpi.a :
 
 	# LinuxKPI proper (common/src) is enabled file by file as it is brought up
 	# on Haiku. In bring-up order:
-	#	linux_lock.c linux_current.c linux_kthread.c linux_work.c
+	linux_lock.c
+	#	linux_current.c linux_kthread.c linux_work.c
 	#	linux_tasklet.c linux_rcu.c linux_schedule.c linux_hrtimer.c
 	#	linux_timesub.c linux_math.c linux_slab.c linux_page.c linux_idr.c
 	#	linux_radix.c linux_xarray.c linux_compat.c linux_devres.c

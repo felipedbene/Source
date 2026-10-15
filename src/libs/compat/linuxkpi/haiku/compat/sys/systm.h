@@ -16,6 +16,16 @@
 #define _LKPI_HAIKU_SYS_SYSTM_H_
 
 
+/* FreeBSD skips lock operations once the scheduler is stopped (panic) or
+ * the kernel debugger holds the system; drivers see neither on Haiku. */
+#define SCHEDULER_STOPPED()	0
+#define kdb_active			0
+
+/* Declared so <linux/uaccess.h>'s inlines compile; implemented when
+ * something on the rtw88 path turns out to use them (nothing does). */
+int copyin_nofault(const void* uaddr, void* kaddr, size_t len);
+int copyout_nofault(const void* kaddr, void* uaddr, size_t len);
+
 #ifndef __assert_unreachable
 #	define __assert_unreachable() \
 		do { \

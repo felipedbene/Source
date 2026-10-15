@@ -25,9 +25,24 @@ struct thread;
 
 __BEGIN_DECLS
 struct thread* lkpi_curthread(void);
+/* From the kernel's private <smp.h>, which can only be included from C++. */
+int32 smp_get_current_cpu(void);
 __END_DECLS
 
 #define curthread (lkpi_curthread())
+
+/* freebsd_network's <sys/smp.h> pins curcpu to 0; LinuxKPI keeps real
+ * per-CPU state (RCU, idr caches), so it needs the real CPU index. */
+static inline int
+lkpi_pcpu_get_cpuid(void)
+{
+	return (int)smp_get_current_cpu();
+}
+
+#define PCPU_GET(member)	lkpi_pcpu_get_##member()
+
+#undef curcpu
+#define curcpu	(lkpi_pcpu_get_cpuid())
 
 
 #endif /* _LKPI_HAIKU_SYS_PCPU_H_ */

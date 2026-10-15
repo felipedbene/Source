@@ -55,5 +55,28 @@ ilog2_long_long(long long n)
 #define order_base_2(n)			ilog2(2*(n)-1)
 #define roundup_pow_of_two(n)	((__typeof(n))1 << order_base_2(n))
 
+#define bitcount32(x)	((unsigned)__builtin_popcount((uint32_t)(x)))
+#define bitcount64(x)	((unsigned)__builtin_popcountll((uint64_t)(x)))
+#define bitcountl(x)	((unsigned)__builtin_popcountl((u_long)(x)))
+
+static __inline char*
+strchrnul(const char* p, int ch)
+{
+	while (*p != '\0' && *p != (char)ch)
+		p++;
+	return (char*)p;
+}
+
+
+/* The kernel exports these (src/system/kernel/lib) but no kernel header
+ * declares them for C. */
+long strtol(const char* cp, char** endp, int base);
+unsigned long strtoul(const char* cp, char** endp, int base);
+long long strtoll(const char* cp, char** endp, int base);
+unsigned long long strtoull(const char* cp, char** endp, int base);
+
+#define strtouq(cp, endp, base)	strtoull(cp, endp, base)
+#define strtoq(cp, endp, base)	strtoll(cp, endp, base)
+
 
 #endif /* _LKPI_HAIKU_SYS_LIBKERN_H_ */

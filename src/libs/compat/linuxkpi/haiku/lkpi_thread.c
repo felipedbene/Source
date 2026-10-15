@@ -27,6 +27,7 @@
 #include <sys/proc.h>
 #include <sys/kthread.h>
 #include <sys/eventhandler.h>
+#include <sys/rtprio.h>
 #include <sys/systm.h>
 
 #include <KernelExport.h>
@@ -332,6 +333,16 @@ lkpi_kthread_add(void (*func)(void*), void* arg, void* p __unused,
 }
 
 
+static int
+lkpi_alloc_current_noop(struct thread* td __unused, int flags __unused)
+{
+	return ENOTSUP;
+}
+
+/* linux_current.c points this at linux_alloc_current() while it is loaded. */
+int (*lkpi_alloc_current)(struct thread*, int) = lkpi_alloc_current_noop;
+
+
 void
 lkpi_sched_prio(struct thread* td, u_char prio)
 {
@@ -345,6 +356,37 @@ void
 lkpi_sched_add(struct thread* td, int flags __unused)
 {
 	resume_thread(td->td_tid);
+}
+
+
+int
+rtp_to_pri(struct rtprio* rtp, struct thread* td)
+{
+	int32 priority;
+
+	if (rtp->prio > RTP_PRIO_MAX)
+		return EINVAL;
+
+	switch (RTP_PRIO_BASE(rtp->type)) {
+		case RTP_PRIO_REALTIME:
+			/* RTP_PRIO_MIN (0) is FreeBSD's highest realtime priority,
+			 * RTP_PRIO_MAX its lowest; map onto Haiku's realtime band. */
+			priority = B_REAL_TIME_PRIORITY - (rtp->prio
+					* (B_REAL_TIME_PRIORITY - B_REAL_TIME_DISPLAY_PRIORITY))
+				/ RTP_PRIO_MAX;
+			break;
+		case RTP_PRIO_NORMAL:
+			priority = B_NORMAL_PRIORITY;
+			break;
+		case RTP_PRIO_IDLE:
+			priority = B_LOW_PRIORITY;
+			break;
+		default:
+			return EINVAL;
+	}
+
+	lkpi_sched_prio(td, priority);
+	return 0;
 }
 
 
