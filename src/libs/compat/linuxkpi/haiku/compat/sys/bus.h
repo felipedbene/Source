@@ -58,6 +58,8 @@ struct resource_list_entry* resource_list_find(struct resource_list* rl,
 
 device_t bus_generic_add_child(device_t dev, u_int order, const char* name,
 	int unit);
+void bus_identify_children(device_t dev);
+void bus_attach_children(device_t dev);
 
 /* NULL on this port: the Linux root device attaches to no newbus parent. */
 extern device_t root_bus;

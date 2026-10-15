@@ -30,7 +30,10 @@ local kconfig = [ FDirName $(SUBDIR) common include linux kconfig.h ] ;
 # renames a stray bare atomic_add() would otherwise only warn, then fail to link.
 # NOTE: no LINUXKPI_VERSION here - FreeBSD defines it per *driver* module
 # (rtw88 uses 70000); the linuxkpi library itself builds without it.
-SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 ]
+# __FreeBSD__ is on because LinuxKPI guards its FreeBSD-side struct members
+# with it; net80211's glue selection is redirected back to the Haiku glue
+# by the haiku/compat/net80211/ieee80211_freebsd.h forwarder.
+SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 __FreeBSD__=1 ]
 	-include $(prelude) -include $(kconfig)
 	-Werror=implicit-function-declaration ;
 SubDirC++Flags [ FDefines _KERNEL=1 ] ;
@@ -87,5 +90,8 @@ KernelStaticLibrary linuxkpi.a :
 	linux_pci.c
 	;
 
-# Once linuxkpi.a is complete, the mac80211 shim goes into its own library:
-#	KernelStaticLibrary linuxkpi_wlan.a : linux_80211.c linux_80211_macops.c ;
+# The mac80211-on-net80211 bridge, as its own library like freebsd_wlan.
+KernelStaticLibrary linuxkpi_wlan.a :
+	linux_80211.c
+	linux_80211_macops.c
+	;

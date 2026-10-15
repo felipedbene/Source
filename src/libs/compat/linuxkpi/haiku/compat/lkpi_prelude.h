@@ -28,6 +28,12 @@
  * side of a LinuxKPI translation unit uses it.
  */
 /*
+ * freebsd_network's <sys/_types.h> falls back to char* varargs unless
+ * this is set; make sure it is before any include order can reach it.
+ */
+#define __GNUCLIKE_BUILTIN_VARARGS 1
+
+/*
  * On Haiku, gcc's <stddef.h> defines __size_t as an EMPTY macro (a BeOS
  * relic), which breaks FreeBSD's <sys/bitset.h>. Parse it now, then make
  * __size_t mean what FreeBSD expects.

@@ -228,10 +228,12 @@ SYSCTL_CHILDREN(void *ptr)
 
 #define SYSCTL_STATIC_CHILDREN(...) NULL
 
+/* FreeBSD's oid naming: sysctl__<full path with underscores>. */
 #define SYSCTL_DECL(name) \
-	extern struct sysctl_oid_list sysctl_##name##_children
+	extern struct sysctl_oid sysctl__##name
 
-#define SYSCTL_NODE(...)
+#define SYSCTL_NODE(parent, nbr, name, access, handler, descr) \
+	struct sysctl_oid sysctl__##parent##_##name
 #define SYSCTL_INT(...)
 #define SYSCTL_UINT(...)
 #define SYSCTL_BOOL(...)
