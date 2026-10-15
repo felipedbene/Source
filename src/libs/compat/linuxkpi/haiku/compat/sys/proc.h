@@ -121,6 +121,8 @@ struct sx;
 extern struct sx allproc_lock;
 __END_DECLS
 
+#define curproc	(curthread->td_proc)
+
 #define PROC_LOCK(p)			lkpi_proc_lock(p)
 #define PROC_UNLOCK(p)			lkpi_proc_unlock(p)
 #define PROC_LOCK_ASSERT(p, what)	do { } while (0)

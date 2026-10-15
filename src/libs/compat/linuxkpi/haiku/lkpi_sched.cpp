@@ -64,3 +64,27 @@ lkpi_sched_unbind(struct thread* td)
 {
 	(void)td;
 }
+
+
+/* From the kernel's private <vm/vm_page.h>, which this port's FreeBSD
+ * <vm/vm_page.h> shadow hides from C++ too; declared directly. */
+typedef phys_addr_t page_num_t;
+page_num_t vm_page_num_pages(void);
+page_num_t vm_page_num_free_pages(void);
+
+extern "C" unsigned int vm_free_count(void);
+extern "C" long physmem;
+
+
+extern "C" unsigned int
+vm_free_count(void)
+{
+	return (unsigned int)vm_page_num_free_pages();
+}
+
+
+extern "C" void
+lkpi_vm_counters_init(void)
+{
+	physmem = (long)vm_page_num_pages();
+}

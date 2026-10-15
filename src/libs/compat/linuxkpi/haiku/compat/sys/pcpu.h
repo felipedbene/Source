@@ -39,6 +39,13 @@ lkpi_pcpu_get_cpuid(void)
 	return (int)smp_get_current_cpu();
 }
 
+/* no NUMA domains on Haiku */
+static inline int
+lkpi_pcpu_get_domain(void)
+{
+	return 0;
+}
+
 #define PCPU_GET(member)	lkpi_pcpu_get_##member()
 
 #undef curcpu

@@ -59,6 +59,15 @@ typedef struct vm_page* vm_page_t;
 	({ panic("PHYS_TO_DMAP: no direct map"); (vm_offset_t)0; })
 #define DMAP_TO_PHYS(va) \
 	({ panic("DMAP_TO_PHYS: no direct map"); (vm_paddr_t)0; })
+#define DMAP_TO_VM_PAGE(va) \
+	({ panic("DMAP_TO_VM_PAGE: no direct map"); (vm_page_t)0; })
+
+#define OFF_TO_IDX(off)		((vm_pindex_t)((off) >> PAGE_SHIFT))
+#define IDX_TO_OFF(idx)		(((vm_ooffset_t)(idx)) << PAGE_SHIFT)
+
+/* Haiku/x86_64's kernel address range (kernel_arch_config.h). */
+#define VM_MIN_KERNEL_ADDRESS	0xffff800000000000ul
+#define VM_MAX_KERNEL_ADDRESS	0xfffffffffffffffful
 
 
 #endif /* _LKPI_HAIKU_VM_VM_H_ */

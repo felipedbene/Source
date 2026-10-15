@@ -21,6 +21,11 @@
 #define SCHEDULER_STOPPED()	0
 #define kdb_active			0
 
+/* FreeBSD's kernel-internal "ioctl not handled here" sentinel. */
+#ifndef ENOIOCTL
+#	define ENOIOCTL		(-3)
+#endif
+
 /* Total physical memory in pages; lkpi_machdep.c. */
 extern long physmem;
 

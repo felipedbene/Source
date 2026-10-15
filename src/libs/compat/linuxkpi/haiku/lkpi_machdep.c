@@ -39,10 +39,13 @@ u_int cpu_stdext_feature = 0;
 int mp_ncores = 1;
 
 /*
- * Total physical memory in pages. Only si_meminfo() (linux_page.c)
- * reports it; fill from vm_page_num_pages() when that file is brought up.
+ * Total physical memory in pages; si_meminfo() (linux_page.c) reports
+ * it. Filled by lkpi_vm_counters_init() (lkpi_sched.cpp - the counter
+ * lives in the C++-only kernel vm headers) from lkpi_smp_sysinit().
  */
 long physmem = 0;
+
+void lkpi_vm_counters_init(void);
 
 /* From the kernel's private <smp.h>, which can only be included from C++. */
 int32 smp_get_num_cpus(void);
@@ -82,6 +85,8 @@ lkpi_smp_sysinit(void* arg __unused)
 	CPU_ZERO(&all_cpus);
 	for (i = 0; i < cpus; i++)
 		CPU_SET(i, &all_cpus);
+
+	lkpi_vm_counters_init();
 }
 SYSINIT(lkpi_smp, SI_SUB_CPU, SI_ORDER_FIRST, lkpi_smp_sysinit, NULL);
 
