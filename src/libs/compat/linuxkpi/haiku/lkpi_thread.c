@@ -198,29 +198,28 @@ struct sx allproc_lock;
 
 
 /*
- * FreeBSD's thread_lock(td) is a per-thread spin lock; here one global
- * spinlock covers them all. Only linux_rcu.c's priority boosting takes
- * it, briefly, so contention is not a concern.
+ * FreeBSD's thread_lock(td) is a per-thread lock; here one global lock
+ * covers them all. Only linux_rcu.c takes it, always from sleepable
+ * thread context, and the code under it sets thread priorities and
+ * yields (sched_prio()/sched_bind()/mi_switch()) - which take kernel
+ * mutexes and reschedule - so this must be a mutex, not a spinlock
+ * (crash #12: _mutex_lock() with interrupts disabled from
+ * set_thread_priority() under linux_synchronize_rcu()'s boost).
  */
-static spinlock sThreadLock = B_SPINLOCK_INITIALIZER;
-static cpu_status sThreadLockCpuState;
+static struct mtx sThreadLock;
 
 
 void
 lkpi_thread_lock(struct thread* td __unused)
 {
-	cpu_status state = disable_interrupts();
-	acquire_spinlock(&sThreadLock);
-	sThreadLockCpuState = state;
+	mtx_lock(&sThreadLock);
 }
 
 
 void
 lkpi_thread_unlock(struct thread* td __unused)
 {
-	cpu_status state = sThreadLockCpuState;
-	release_spinlock(&sThreadLock);
-	restore_interrupts(state);
+	mtx_unlock(&sThreadLock);
 }
 
 
@@ -389,6 +388,7 @@ lkpi_thread_sysinit(void* arg __unused)
 		panic("lkpi_thread_sysinit: out of memory");
 
 	mtx_init(&sProcLock, "lkpi proc", NULL, MTX_DEF);
+	mtx_init(&sThreadLock, "lkpi thread", NULL, MTX_DEF);
 	sx_init(&allproc_lock, "allproc");
 
 	sReaperQuit = false;
@@ -419,6 +419,7 @@ lkpi_thread_sysuninit(void* arg __unused)
 	lkpi_thread_reap(true);
 
 	sx_destroy(&allproc_lock);
+	mtx_destroy(&sThreadLock);
 	mtx_destroy(&sProcLock);
 
 	free(sFallbackThreads, M_LKPI_THREAD);
