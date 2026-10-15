@@ -14,13 +14,17 @@
 #include <sys/cpuset.h>
 #include <sys/interrupt.h>
 #include <sys/kernel.h>
+#include <sys/libkern.h>
 #include <sys/lock.h>
+#include <sys/malloc.h>
 #include <sys/smp.h>
 #include <sys/syscallsubr.h>
 #include <sys/systm.h>
 
 #include <machine/md_var.h>
 #include <vm/pmap.h>
+
+#include <string.h>
 
 
 /*
@@ -110,6 +114,17 @@ struct lock_class lkpi_lock_class_noop = {
 	.lc_assert = lkpi_lc_assert_noop,
 	.lc_owner = lkpi_lc_owner_held,
 };
+
+
+char*
+lkpi_strdup(const char* str)
+{
+	size_t size = strlen(str) + 1;
+	char* copy = _kernel_malloc(size, 0);
+	if (copy != NULL)
+		memcpy(copy, str, size);
+	return copy;
+}
 
 
 int

@@ -92,5 +92,27 @@ unsigned long long strtoull(const char* cp, char** endp, int base);
 #define strtouq(cp, endp, base)	strtoull(cp, endp, base)
 #define strtoq(cp, endp, base)	strtoll(cp, endp, base)
 
+/* Uniform [0, bound) with the usual rejection step, like FreeBSD's. */
+static __inline uint32_t
+arc4random_uniform(uint32_t bound)
+{
+	uint32_t min, r;
+
+	if (bound < 2)
+		return 0;
+	min = -bound % bound;
+	for (;;) {
+		r = arc4random();
+		if (r >= min)
+			break;
+	}
+	return r % bound;
+}
+
+/* FreeBSD's strdup(9) takes a malloc type; POSIX's declaration stays
+ * usable since only two-argument calls match the macro. */
+char* lkpi_strdup(const char* str);
+#define strdup(str, type)	lkpi_strdup(str)
+
 
 #endif /* _LKPI_HAIKU_SYS_LIBKERN_H_ */
