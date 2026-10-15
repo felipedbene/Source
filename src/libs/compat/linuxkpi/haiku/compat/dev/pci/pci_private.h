@@ -60,6 +60,7 @@ struct pcicfg {
 };
 
 struct pci_devinfo {
+	device_t				dev;
 	struct pcicfg			cfg;
 	struct resource_list	resources;
 };

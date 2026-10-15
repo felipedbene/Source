@@ -154,6 +154,7 @@ lkpi_pci_provide_devinfo(device_t dev)
 	if (dinfo == NULL)
 		return;
 
+	dinfo->dev = dev;
 	STAILQ_INIT(&dinfo->resources.rl_list);
 
 	if (pci_find_cap(dev, PCIY_EXPRESS, &reg) == 0) {
@@ -411,12 +412,40 @@ struct resource_list_entry*
 resource_list_find(struct resource_list* rl, int type, int rid)
 {
 	struct resource_list_entry* rle;
+	struct pci_devinfo* dinfo;
 
 	if (rl == NULL)
 		return NULL;
 	STAILQ_FOREACH(rle, &rl->rl_list, link) {
 		if (rle->type == type && rle->rid == rid)
 			return rle;
+	}
+
+	/*
+	 * On FreeBSD, pci_alloc_msi() records the allocated vectors as
+	 * SYS_RES_IRQ rid 1..n on the devinfo resource list, which LinuxKPI
+	 * then reads (_lkpi_pci_enable_msi_range()). freebsd_network's
+	 * pci_alloc_msi() keeps the vector in its pci_info instead, where
+	 * bus_alloc_resource() hands it out for IRQ rids >= 1 - so create
+	 * the missing entry from there on first use. Every resource list on
+	 * this port is embedded in a pci_devinfo (lkpi_pci_provide_devinfo),
+	 * which the dev backpointer check verifies.
+	 */
+	if (type == SYS_RES_IRQ && rid >= 1) {
+		struct resource* res;
+		int allocRid = rid;
+
+		dinfo = (struct pci_devinfo*)((char*)rl
+			- offsetof(struct pci_devinfo, resources));
+		if (dinfo->dev == NULL || device_get_ivars(dinfo->dev) != dinfo)
+			return NULL;
+
+		res = bus_alloc_resource(dinfo->dev, SYS_RES_IRQ, &allocRid,
+			0, ~0, 1, RF_ACTIVE | RF_SHAREABLE);
+		if (res == NULL)
+			return NULL;
+		return lkpi_resource_list_add(rl, type, rid, res,
+			rman_get_start(res), 1);
 	}
 	return NULL;
 }
@@ -488,6 +517,15 @@ _bus_dmamap_load_phys(bus_dma_tag_t dmat __unused, bus_dmamap_t map __unused,
 	 * requested ranges for coherent memory; a device whose DMA mask ever
 	 * excludes an mbuf/skb address would need real bouncing here.
 	 */
+	/* XXX bring-up diagnostic (crash #6): trace the first mappings. */
+	{
+		static int sTraced = 0;
+		if (sTraced < 64) {
+			sTraced++;
+			printf("lkpi: dmamap_load_phys #%d: phys 0x%lx len %lu\n",
+				sTraced, (unsigned long)buf, (unsigned long)buflen);
+		}
+	}
 	(*segp)++;
 	segs[*segp].ds_addr = buf;
 	segs[*segp].ds_len = buflen;
