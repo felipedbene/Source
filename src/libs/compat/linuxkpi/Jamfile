@@ -35,7 +35,10 @@ local kconfig = [ FDirName $(SUBDIR) common include linux kconfig.h ] ;
 # by the haiku/compat/net80211/ieee80211_freebsd.h forwarder.
 SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 __FreeBSD__=1 ]
 	-include $(prelude) -include $(kconfig)
-	-Werror=implicit-function-declaration ;
+	# (int-conversion stays a warning: upstream LinuxKPI assigns
+	# vm_offset_t to pointers deliberately)
+	-Werror=implicit-function-declaration
+	-Werror=incompatible-pointer-types ;
 SubDirC++Flags [ FDefines _KERNEL=1 ] ;
 
 SEARCH_SOURCE += [ FDirName $(SUBDIR) haiku ] ;

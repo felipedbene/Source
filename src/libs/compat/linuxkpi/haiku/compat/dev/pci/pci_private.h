@@ -33,7 +33,7 @@ struct pci_map {
 /* Implemented with the rest of the linux_pci.c glue (lkpi_pci shim). */
 struct pci_map* pci_find_bar(device_t dev, int reg);
 struct resource* pci_reserve_map(device_t dev, device_t child, int type,
-	int* rid, rman_res_t start, rman_res_t end, rman_res_t count,
+	int rid, rman_res_t start, rman_res_t end, rman_res_t count,
 	u_int num, u_int flags);
 
 /*

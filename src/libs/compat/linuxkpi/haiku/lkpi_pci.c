@@ -389,18 +389,19 @@ pci_find_bar(device_t dev, int reg)
  * LinuxKPI's pci_iomap() reads back out of the resource.
  */
 struct resource*
-pci_reserve_map(device_t dev __unused, device_t child, int type, int* rid,
+pci_reserve_map(device_t dev __unused, device_t child, int type, int rid,
 	rman_res_t start __unused, rman_res_t end __unused,
 	rman_res_t count __unused, u_int num __unused, u_int flags __unused)
 {
 	struct pci_devinfo* dinfo = device_get_ivars(child);
 	struct resource* res;
+	int allocRid = rid;
 
-	res = bus_alloc_resource(child, type, rid, 0, ~0, 1, RF_ACTIVE);
+	res = bus_alloc_resource(child, type, &allocRid, 0, ~0, 1, RF_ACTIVE);
 	if (res == NULL || dinfo == NULL)
 		return res;
 
-	lkpi_resource_list_add(&dinfo->resources, type, *rid, res,
+	lkpi_resource_list_add(&dinfo->resources, type, rid, res,
 		rman_get_start(res), rman_get_size(res));
 	return res;
 }
