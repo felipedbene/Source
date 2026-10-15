@@ -1488,6 +1488,26 @@ int rtw_power_on(struct rtw_dev *rtwdev)
 	}
 
 	ret = rtw_download_firmware(rtwdev, fw);
+#if defined(__HAIKU__)
+	/* XXX Haiku bring-up: the download intermittently fails its DDMA
+	 * checksum and leaves the chip's TX path wedged - only a full power
+	 * cycle recovers it (plain download retries fail at the rsvd page
+	 * write). Power-cycle and retry a few times. */
+	{
+		int tries;
+
+		for (tries = 0; ret != 0 && tries < 3; tries++) {
+			rtw_warn(rtwdev,
+			    "fw download failed, power cycling (retry %d)\n",
+			    tries + 1);
+			rtw_mac_power_off(rtwdev);
+			ret = rtw_mac_power_on(rtwdev);
+			if (ret != 0)
+				continue;
+			ret = rtw_download_firmware(rtwdev, fw);
+		}
+	}
+#endif
 	if (ret) {
 		rtw_err(rtwdev, "failed to download firmware\n");
 		goto err_off;

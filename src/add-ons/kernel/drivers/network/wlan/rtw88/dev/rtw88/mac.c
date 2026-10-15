@@ -1034,20 +1034,6 @@ int rtw_download_firmware(struct rtw_dev *rtwdev, struct rtw_fw_state *fw)
 	int ret;
 
 	ret = _rtw_download_firmware(rtwdev, fw);
-#if defined(__HAIKU__)
-	/* XXX Haiku bring-up: the download intermittently fails its DDMA
-	 * checksum on this port (cause not yet understood); a retry has
-	 * always succeeded. Retry a couple of times before giving up. */
-	{
-		int tries;
-
-		for (tries = 0; ret != 0 && tries < 3; tries++) {
-			rtw_warn(rtwdev, "firmware download retry %d\n",
-			    tries + 1);
-			ret = _rtw_download_firmware(rtwdev, fw);
-		}
-	}
-#endif
 	if (ret)
 		return ret;
 
