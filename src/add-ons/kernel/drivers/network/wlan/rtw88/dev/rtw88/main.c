@@ -370,9 +370,14 @@ static void rtw_watch_dog_work(struct work_struct *work)
 	 * get that vif and check if device is having traffic more than the
 	 * threshold.
 	 */
+#if !defined(__HAIKU__)
+	/* XXX Haiku bring-up: waking from LPS does not work reliably on
+	 * this port yet - the firmware stops delivering C2H (tx reports)
+	 * and traffic dies after ~2s of idle. Keep the chip awake. */
 	if (rtwdev->ps_enabled && data.rtwvif && !ps_active &&
 	    !rtwdev->beacon_loss && !rtwdev->ap_active)
 		rtw_enter_lps(rtwdev, data.rtwvif->port);
+#endif
 
 	rtwdev->watch_dog_cnt++;
 
