@@ -96,9 +96,10 @@ extern int (*lkpi_alloc_current)(struct thread* td, int flags);
 /*
  * The process-table slice of FreeBSD's <sys/proc.h> that linux_current.c
  * uses, on the one kernel proc and the shadow-thread table
- * (lkpi_thread.c). PROC_LOCK is the shadow table's spinlock, so nothing
- * may sleep under it - the FreeBSD code holding it only runs atomics.
- * tdfind() and pfind() return with the proc locked, as on FreeBSD.
+ * (lkpi_thread.c). PROC_LOCK is a regular mutex, as FreeBSD's is: the
+ * code holding it allocates (linux_alloc_current() initializes cloned-
+ * name locks under it). tdfind() and pfind() return with the proc
+ * locked, as on FreeBSD.
  */
 void lkpi_proc_lock(struct proc* p);
 void lkpi_proc_unlock(struct proc* p);

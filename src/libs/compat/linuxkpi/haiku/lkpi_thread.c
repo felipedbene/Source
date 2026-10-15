@@ -24,6 +24,7 @@
 #include <sys/param.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
+#include <sys/mutex.h>
 #include <sys/proc.h>
 #include <sys/kthread.h>
 #include <sys/eventhandler.h>
@@ -104,29 +105,31 @@ lkpi_thread_lookup(thread_id id)
 
 
 /*
- * PROC_LOCK on the one kernel proc is the shadow-table spinlock, so
- * FOREACH_THREAD_IN_PROC can walk the table under it. The saved interrupt
- * state is protected by the spinlock itself: it is written after
- * acquiring and read back before releasing.
+ * PROC_LOCK on the one kernel proc. On FreeBSD this is a regular (MTX_DEF)
+ * mutex and the code holding it is allowed to allocate - linux_current.c
+ * initializes locks (which clone their names) under it - so it must be a
+ * mutex here too, not a spinlock (crash #8: "called with interrupts
+ * disabled" from init_rwsem under PROC_LOCK).
+ *
+ * FOREACH_THREAD_IN_PROC walks the shadow table under PROC_LOCK alone:
+ * concurrent inserts only ever prepend fully-initialized entries, and the
+ * reaper holds PROC_LOCK (in addition to the hash spinlock) while
+ * unlinking, so an entry a walker stands on cannot go away.
  */
-static cpu_status sProcLockCpuState;
+static struct mtx sProcLock;
 
 
 void
 lkpi_proc_lock(struct proc* p __unused)
 {
-	cpu_status state = disable_interrupts();
-	acquire_spinlock(&sThreadHashLock);
-	sProcLockCpuState = state;
+	mtx_lock(&sProcLock);
 }
 
 
 void
 lkpi_proc_unlock(struct proc* p __unused)
 {
-	cpu_status state = sProcLockCpuState;
-	release_spinlock(&sThreadHashLock);
-	restore_interrupts(state);
+	mtx_unlock(&sProcLock);
 }
 
 
@@ -224,10 +227,10 @@ lkpi_thread_unlock(struct thread* td __unused)
 void
 tdsignal(struct thread* td, int signo)
 {
-	/* Runs under PROC_LOCK (a spinlock), so this only records the signal
-	 * for the signal_pending() emulation. It does not interrupt a wait
-	 * already in progress: nothing on the wifi path sends signals to a
-	 * sleeping kthread (kthread parking uses completions). */
+	/* Only records the signal for the signal_pending() emulation. It does
+	 * not interrupt a wait already in progress: nothing on the wifi path
+	 * sends signals to a sleeping kthread (kthread parking uses
+	 * completions). */
 	SIGADDSET(td->td_siglist, signo);
 }
 
@@ -348,11 +351,17 @@ lkpi_thread_reap(bool all)
 			if (!all && get_thread_info(td->td_tid, &info) == B_OK)
 				continue;
 
+			/* PROC_LOCK keeps FOREACH_THREAD_IN_PROC walkers off the
+			 * entry, the spinlock keeps lookups off it. Both are
+			 * dropped before the dtor handlers run: they may take
+			 * PROC_LOCK themselves. */
+			lkpi_proc_lock(&sKernelProc);
 			state = disable_interrupts();
 			acquire_spinlock(&sThreadHashLock);
 			SLIST_REMOVE(&sThreadHash[i], td, thread, td_hash_link);
 			release_spinlock(&sThreadHashLock);
 			restore_interrupts(state);
+			lkpi_proc_unlock(&sKernelProc);
 
 			lkpi_thread_free(td);
 		}
@@ -379,6 +388,7 @@ lkpi_thread_sysinit(void* arg __unused)
 	if (sFallbackThreads == NULL)
 		panic("lkpi_thread_sysinit: out of memory");
 
+	mtx_init(&sProcLock, "lkpi proc", NULL, MTX_DEF);
 	sx_init(&allproc_lock, "allproc");
 
 	sReaperQuit = false;
@@ -404,6 +414,7 @@ lkpi_thread_sysuninit(void* arg __unused)
 	lkpi_thread_reap(true);
 
 	sx_destroy(&allproc_lock);
+	mtx_destroy(&sProcLock);
 
 	free(sFallbackThreads, M_LKPI_THREAD);
 	sFallbackThreads = NULL;
