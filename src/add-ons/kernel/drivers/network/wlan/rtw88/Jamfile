@@ -1,0 +1,63 @@
+SubDir HAIKU_TOP src add-ons kernel drivers network wlan rtw88 ;
+
+# The LinuxKPI rtw88 driver; built as LinuxKPI translation units, with
+# the same include order and forced prelude as the linuxkpi library.
+
+local linuxkpiTop = [ FDirName $(HAIKU_TOP) src libs compat linuxkpi ] ;
+
+UseHeaders [ FDirName $(linuxkpiTop) haiku compat ] : true ;
+UseHeaders [ FDirName $(linuxkpiTop) ck include ] : true ;
+UseHeaders [ FDirName $(linuxkpiTop) common include ] : true ;
+UseHeaders [ FDirName $(linuxkpiTop) dummy include ] : true ;
+UseHeaders [ FDirName $(HAIKU_TOP) src libs compat freebsd_network compat ]
+	: true ;
+UseHeaders [ FDirName $(HAIKU_TOP) src libs compat freebsd_wlan ] : true ;
+UseHeaders [ FDirName $(HAIKU_TOP) src libs ] : true ;
+UsePrivateHeaders net ;
+UsePrivateKernelHeaders ;
+UseHeaders $(HAIKU_PRIVATE_KERNEL_HEADERS) : true ;
+UseHeaders [ FDirName $(SUBDIR) dev rtw88 ] : true ;
+
+local prelude = [ FDirName $(linuxkpiTop) haiku compat lkpi_prelude.h ] ;
+local kconfig = [ FDirName $(linuxkpiTop) common include linux kconfig.h ] ;
+SubDirCcFlags [ FDefines _KERNEL=1 FBSD_DRIVER=1 __FreeBSD__=1
+	LINUXKPI_VERSION=70000 CONFIG_RTW88_DEBUG ]
+	-include $(prelude) -include $(kconfig)
+	-DKBUILD_MODNAME='\"rtw88\"'
+	-Wno-format
+	-Wno-unused
+	-Wno-uninitialized ;
+
+SEARCH_SOURCE += [ FDirName $(SUBDIR) dev rtw88 ] ;
+
+KernelAddon rtw88 :
+	glue.c
+
+	# core
+	main.c
+	bf.c
+	coex.c
+	debug.c
+	efuse.c
+	fw.c
+	mac.c
+	mac80211.c
+	phy.c
+	ps.c
+	regd.c
+	rx.c
+	sar.c
+	sec.c
+	tx.c
+	util.c
+
+	# RTL8821C
+	rtw8821c.c
+	rtw8821c_table.c
+
+	# PCIe
+	pci.c
+	rtw8821ce.c
+	:
+	linuxkpi_wlan.a linuxkpi.a freebsd_wlan.a libfreebsd_network.a
+	;
