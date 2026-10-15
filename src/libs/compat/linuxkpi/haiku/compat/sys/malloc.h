@@ -33,13 +33,34 @@
 #define malloc_size(size)	(size)
 
 /*
- * Declared so <linux/slab.h>'s inlines compile; implemented when
- * linux_slab.c is brought up (the Haiku kernel heap has no usable-size
- * query, so these need LinuxKPI-side allocation tracking).
+ * Allocations in LinuxKPI translation units are size-tracked
+ * (lkpi_malloc.c): linux/slab.h needs malloc_usable_size()/zfree(), and
+ * kfree() of a >PAGE_SIZE kmalloc() must go back to contigfree, which
+ * Haiku's heap free cannot do on its own.
  */
+void* lkpi_malloc_tracked(size_t size, int flags);
+void* lkpi_contigmalloc_tracked(size_t size, int flags, vm_paddr_t low,
+	vm_paddr_t high, unsigned long alignment, unsigned long boundary);
+void lkpi_free_tracked(void* ptr);
+void lkpi_contigfree_tracked(void* ptr, unsigned long size);
+void* lkpi_realloc(void* ptr, size_t size, int flags);
 size_t malloc_usable_size(const void* ptr);
 void lkpi_zfree(void* ptr);
-#define zfree(addr, type)	lkpi_zfree(addr)
+
+#undef malloc
+#undef free
+#undef contigmalloc
+#undef contigfree
+#define malloc(size, tag, flags)	lkpi_malloc_tracked(size, flags)
+#define free(ptr, tag)				lkpi_free_tracked(ptr)
+#define contigmalloc(size, type, flags, low, high, alignment, boundary) \
+	lkpi_contigmalloc_tracked(size, flags, low, high, alignment, boundary)
+#define contigmalloc_domainset(size, type, ds, flags, low, high, alignment, \
+			boundary) \
+	lkpi_contigmalloc_tracked(size, flags, low, high, alignment, boundary)
+#define contigfree(addr, size, type)	lkpi_contigfree_tracked(addr, size)
+#define realloc(ptr, size, type, flags)	lkpi_realloc(ptr, size, flags)
+#define zfree(addr, type)				lkpi_zfree(addr)
 
 
 #endif /* _LKPI_HAIKU_SYS_MALLOC_H_ */
