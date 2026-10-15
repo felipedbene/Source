@@ -260,6 +260,14 @@ vm_object_deallocate(vm_object_t object __unused)
 }
 
 
+int
+vm_object_set_memattr(vm_object_t object, vm_memattr_t memattr)
+{
+	object->memattr = memattr;
+	return 0;
+}
+
+
 void
 vm_pager_page_unswapped(struct vm_page* page __unused)
 {

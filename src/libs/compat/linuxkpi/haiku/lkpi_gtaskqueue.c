@@ -70,6 +70,30 @@ taskqgroup_drain_all(struct taskqgroup* qgroup __unused)
 }
 
 
+/*
+ * Newer FreeBSD taskqueue API linux_work.c uses. The poll only feeds
+ * flush_work()'s return value - taskqueue_drain() does the actual
+ * waiting - so pending-count accuracy suffices ("running right now"
+ * is not visible outside freebsd_network's taskqueue).
+ */
+int
+taskqueue_poll_is_busy(struct taskqueue* queue __unused, struct task* task)
+{
+	return task->ta_pending != 0;
+}
+
+
+int
+taskqueue_enqueue_flags(struct taskqueue* queue, struct task* task,
+	int flags)
+{
+	if ((flags & TASKQUEUE_FAIL_IF_PENDING) != 0 && task->ta_pending != 0)
+		return EEXIST;
+	/* no cancel state is visible; TASKQUEUE_FAIL_IF_CANCELING passes */
+	return taskqueue_enqueue(queue, task);
+}
+
+
 static void
 lkpi_gtaskqueue_sysinit(void* arg __unused)
 {

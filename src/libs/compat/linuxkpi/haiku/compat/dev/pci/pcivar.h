@@ -38,5 +38,13 @@ extern int pci_enable_aspm;
 #	define PCIV_INVALID	0xffff
 #endif
 
+/* newer FreeBSD spellings of older names */
+#ifndef PCIEM_CTL2_COMP_TIMO_DISABLE
+#	define PCIEM_CTL2_COMP_TIMO_DISABLE	PCIEM_CTL2_COMP_TIMEOUT_DIS
+#endif
+#ifndef PCI_POWERSTATE_D3_HOT
+#	define PCI_POWERSTATE_D3_HOT	PCI_POWERSTATE_D3
+#endif
+
 
 #endif /* _LKPI_HAIKU_DEV_PCI_PCIVAR_H_ */

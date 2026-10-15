@@ -123,6 +123,21 @@ devclass_create(const char* classname __unused)
 }
 
 
+devclass_t
+devclass_find(const char* classname)
+{
+	return devclass_create(classname);
+}
+
+
+device_t
+devclass_get_device(devclass_t dc __unused, int unit __unused)
+{
+	/* no device registry; lookups find nothing */
+	return NULL;
+}
+
+
 driver_t*
 device_get_driver(device_t dev __unused)
 {
@@ -238,13 +253,7 @@ pci_find_bsf(uint8_t bus __unused, uint8_t slot __unused,
 }
 
 
-device_t
-pci_find_dbsf(uint32_t domain __unused, uint8_t bus __unused,
-	uint8_t slot __unused, uint8_t func __unused)
-{
-	return NULL;
-}
-
+/* pci_find_dbsf comes from freebsd_network's pci.cpp */
 
 device_t
 pci_find_device(uint16_t vendor __unused, uint16_t device __unused)

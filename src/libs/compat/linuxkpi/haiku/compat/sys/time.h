@@ -48,6 +48,7 @@
  * (lkpi_time.c). */
 void nanouptime(struct timespec* ts);
 void nanotime(struct timespec* ts);
+void microtime(struct timeval* tv);
 #define getnanouptime(ts)	nanouptime(ts)
 #define getnanotime(ts)		nanotime(ts)
 

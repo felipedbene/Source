@@ -33,6 +33,15 @@ nanotime(struct timespec* ts)
 }
 
 
+void
+microtime(struct timeval* tv)
+{
+	bigtime_t usecs = real_time_clock_usecs();
+	tv->tv_sec = usecs / 1000000LL;
+	tv->tv_usec = usecs % 1000000LL;
+}
+
+
 int
 pause_sbt(const char* wmesg __unused, sbintime_t sbt, sbintime_t pr __unused,
 	int flags)

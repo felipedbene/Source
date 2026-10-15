@@ -61,6 +61,28 @@ devtoname(struct cdev* dev)
 }
 
 
+/* No backlight devices exist behind LinuxKPI. */
+
+struct cdev*
+backlight_register(const char* name __unused, device_t dev __unused)
+{
+	return NULL;
+}
+
+
+int
+backlight_destroy(struct cdev* dev __unused)
+{
+	return 0;
+}
+
+
+void
+backlight_schedule_update_status(struct cdev* dev __unused)
+{
+}
+
+
 /* No fd table exists behind LinuxKPI on Haiku. */
 
 int

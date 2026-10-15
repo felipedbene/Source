@@ -25,6 +25,7 @@
 #include <machine/md_var.h>
 #include <vm/pmap.h>
 
+#include <stdarg.h>
 #include <string.h>
 
 
@@ -187,6 +188,54 @@ qsort_r(void* base, size_t nmemb, size_t size,
 	if (swapbuf != stackbuf)
 		_kernel_free(swapbuf);
 }
+
+
+unsigned char
+bcd2bin(unsigned char bcd)
+{
+	return (bcd >> 4) * 10 + (bcd & 0x0f);
+}
+
+
+unsigned int
+bitcount(unsigned int value)
+{
+	return (unsigned int)__builtin_popcount(value);
+}
+
+
+int
+_intr_drain(int irq __unused)
+{
+	/* freebsd_network's bus_teardown_intr already synchronizes with a
+	 * running handler; nothing further to drain here. */
+	return 0;
+}
+
+
+void
+vlog(int level __unused, const char* fmt, va_list ap)
+{
+	driver_vprintf(fmt, ap);
+}
+
+
+/*
+ * kernel_fpu_begin()/end() funnel through this. Haiku kernel threads may
+ * not touch the FPU without saving state; nothing on the rtw88 path does
+ * FPU math, so run the callback directly and let any violation surface
+ * as the kernel's own FPU fault rather than silent corruption.
+ */
+void
+lkpi_fpu_safe_exec(void (*func)(void*), void* ctx)
+{
+	func(ctx);
+}
+
+
+/* MSI interrupt-vector window: none is wired up yet. */
+int first_msi_irq = 0;
+int num_msi_irqs = 0;
 
 
 char*
