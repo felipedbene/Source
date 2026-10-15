@@ -104,7 +104,9 @@ lkpi_gtaskqueue_sysinit(void* arg __unused)
 	taskqueue_start_threads(&sSoftirqQueue, 1, PI_SWI(SWI_NET),
 		"lkpi softirq");
 }
-SYSINIT(lkpi_gtaskqueue, SI_SUB_TASKQ, SI_ORDER_SECOND,
+/* SI_SUB_CPU: a bucket ahead of SI_SUB_TASKQ, where linux_tasklet.c
+ * attaches its grouptasks to the queue created here. */
+SYSINIT(lkpi_gtaskqueue, SI_SUB_CPU, SI_ORDER_SECOND,
 	lkpi_gtaskqueue_sysinit, NULL);
 
 
@@ -114,5 +116,5 @@ lkpi_gtaskqueue_sysuninit(void* arg __unused)
 	taskqueue_free(sSoftirqQueue);
 	sSoftirqQueue = NULL;
 }
-SYSUNINIT(lkpi_gtaskqueue, SI_SUB_TASKQ, SI_ORDER_SECOND,
+SYSUNINIT(lkpi_gtaskqueue, SI_SUB_CPU, SI_ORDER_SECOND,
 	lkpi_gtaskqueue_sysuninit, NULL);

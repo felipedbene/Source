@@ -99,7 +99,9 @@ lkpi_smp_sysinit(void* arg __unused)
 
 	lkpi_vm_counters_init();
 }
-SYSINIT(lkpi_smp, SI_SUB_CPU, SI_ORDER_FIRST, lkpi_smp_sysinit, NULL);
+/* SI_SUB_LOCK: in the first bucket, before anything iterates CPUs
+ * (linux_rcu's per-CPU registration reads mp_maxid in the second). */
+SYSINIT(lkpi_smp, SI_SUB_LOCK, SI_ORDER_FIRST, lkpi_smp_sysinit, NULL);
 
 
 static void
