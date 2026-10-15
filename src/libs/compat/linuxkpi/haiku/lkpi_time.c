@@ -31,3 +31,24 @@ nanotime(struct timespec* ts)
 	ts->tv_sec = usecs / 1000000LL;
 	ts->tv_nsec = (usecs % 1000000LL) * 1000;
 }
+
+
+int
+pause_sbt(const char* wmesg __unused, sbintime_t sbt, sbintime_t pr __unused,
+	int flags)
+{
+	uint32 snoozeFlags = B_RELATIVE_TIMEOUT;
+	status_t status;
+
+	if ((flags & C_CATCH) != 0)
+		snoozeFlags |= B_CAN_INTERRUPT;
+
+	do {
+		status = snooze_etc(sbttous(sbt), B_SYSTEM_TIMEBASE, snoozeFlags);
+		/* an uninterruptible pause must run its full time */
+	} while (status == B_INTERRUPTED && (flags & C_CATCH) == 0);
+
+	if (status == B_INTERRUPTED)
+		return EINTR;
+	return EWOULDBLOCK;
+}

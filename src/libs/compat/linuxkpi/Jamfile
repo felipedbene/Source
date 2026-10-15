@@ -7,6 +7,8 @@ SubDir HAIKU_TOP src libs compat linuxkpi ;
 # The haiku/compat headers must come first: they shadow some freebsd_network
 # headers (sys/pcpu.h, sys/proc.h, sys/sx.h, sys/kthread.h) for LinuxKPI only.
 UseHeaders [ FDirName $(SUBDIR) haiku compat ] : true ;
+# Concurrencykit's epoch reclamation, for linux_rcu.c (vendored, see UPSTREAM).
+UseHeaders [ FDirName $(SUBDIR) ck include ] : true ;
 # As on FreeBSD: the real headers, then stubs for the ones LinuxKPI lacks.
 UseHeaders [ FDirName $(SUBDIR) common include ] : true ;
 UseHeaders [ FDirName $(SUBDIR) dummy include ] : true ;
@@ -33,12 +35,14 @@ SubDirC++Flags [ FDefines _KERNEL=1 ] ;
 
 SEARCH_SOURCE += [ FDirName $(SUBDIR) haiku ] ;
 SEARCH_SOURCE += [ FDirName $(SUBDIR) common src ] ;
+SEARCH_SOURCE += [ FDirName $(SUBDIR) ck src ] ;
 
 KernelStaticLibrary linuxkpi.a :
 	# Haiku implementations of FreeBSD kernel APIs LinuxKPI needs
 	lkpi_gtaskqueue.c
 	lkpi_machdep.c
 	lkpi_sched.cpp
+	lkpi_sleepqueue.c
 	lkpi_time.c
 	lkpi_sx.c
 	lkpi_thread.c
@@ -46,6 +50,7 @@ KernelStaticLibrary linuxkpi.a :
 
 	# FreeBSD kernel sources LinuxKPI needs
 	fbsd_subr_pctrie.c
+	ck_epoch.c
 
 	# LinuxKPI proper (common/src) is enabled file by file as it is brought up
 	# on Haiku. In bring-up order:
@@ -54,7 +59,9 @@ KernelStaticLibrary linuxkpi.a :
 	linux_kthread.c
 	linux_work.c
 	linux_tasklet.c
-	#	linux_rcu.c linux_schedule.c linux_hrtimer.c
+	linux_schedule.c
+	linux_rcu.c
+	#	linux_hrtimer.c
 	#	linux_timesub.c linux_math.c linux_slab.c linux_page.c linux_idr.c
 	#	linux_radix.c linux_xarray.c linux_compat.c linux_devres.c
 	#	linux_kobject.c linux_firmware.c linux_interrupt.c linux_pci.c

@@ -28,6 +28,7 @@
 #include <sys/kthread.h>
 #include <sys/eventhandler.h>
 #include <sys/rtprio.h>
+#include <sys/signalvar.h>
 #include <sys/sx.h>
 #include <sys/systm.h>
 
@@ -191,6 +192,44 @@ lkpi_allproc_first(void)
 /* All shadow threads belong to the one kernel proc. Initialized in
  * lkpi_thread_sysinit(). */
 struct sx allproc_lock;
+
+
+/*
+ * FreeBSD's thread_lock(td) is a per-thread spin lock; here one global
+ * spinlock covers them all. Only linux_rcu.c's priority boosting takes
+ * it, briefly, so contention is not a concern.
+ */
+static spinlock sThreadLock = B_SPINLOCK_INITIALIZER;
+static cpu_status sThreadLockCpuState;
+
+
+void
+lkpi_thread_lock(struct thread* td __unused)
+{
+	cpu_status state = disable_interrupts();
+	acquire_spinlock(&sThreadLock);
+	sThreadLockCpuState = state;
+}
+
+
+void
+lkpi_thread_unlock(struct thread* td __unused)
+{
+	cpu_status state = sThreadLockCpuState;
+	release_spinlock(&sThreadLock);
+	restore_interrupts(state);
+}
+
+
+void
+tdsignal(struct thread* td, int signo)
+{
+	/* Runs under PROC_LOCK (a spinlock), so this only records the signal
+	 * for the signal_pending() emulation. It does not interrupt a wait
+	 * already in progress: nothing on the wifi path sends signals to a
+	 * sleeping kthread (kthread parking uses completions). */
+	SIGADDSET(td->td_siglist, signo);
+}
 
 
 void
@@ -453,9 +492,29 @@ int (*lkpi_alloc_current)(struct thread*, int) = linux_alloc_current_noop;
 void
 lkpi_sched_prio(struct thread* td, u_char prio)
 {
-	/* freebsd_network's PI_* priorities are already Haiku priorities. */
+	/* freebsd_network's PI_* priorities are already Haiku priorities, with
+	 * one exception: a literal 0 is FreeBSD's "highest" (linux_rcu.c
+	 * boosts with it), while 0 is idle on Haiku - no caller ever means
+	 * that, so translate it to a boost. */
+	if (prio == 0)
+		prio = B_URGENT_DISPLAY_PRIORITY;
+
 	td->td_priority = prio;
 	set_thread_priority(td->td_tid, prio);
+}
+
+
+/* From the kernel's private <thread.h>, which is C++-only. */
+void thread_yield(void);
+
+
+void
+lkpi_mi_switch(int flags __unused)
+{
+	/* Entered with thread_lock() held; FreeBSD's mi_switch() drops it
+	 * before switching, and linux_rcu.c relies on exactly that. */
+	lkpi_thread_unlock(NULL);
+	thread_yield();
 }
 
 

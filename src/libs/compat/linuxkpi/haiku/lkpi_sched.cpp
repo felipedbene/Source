@@ -42,3 +42,25 @@ lkpi_sched_relinquish(struct thread* td)
 	(void)td;
 	thread_yield();
 }
+
+
+extern "C" void
+lkpi_sched_bind(struct thread* td, int cpu)
+{
+	/*
+	 * Haiku gives drivers no way to migrate a thread to a chosen CPU.
+	 * linux_rcu.c binds to a reader's CPU only to speed up grace periods
+	 * - ck_epoch_synchronize_wait() does the actual waiting - so yield
+	 * instead, giving that CPU's threads a chance to run.
+	 */
+	(void)td;
+	(void)cpu;
+	thread_yield();
+}
+
+
+extern "C" void
+lkpi_sched_unbind(struct thread* td)
+{
+	(void)td;
+}

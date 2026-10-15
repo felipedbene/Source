@@ -18,5 +18,9 @@
 #define MTX_NOWITNESS	0x00000000
 #define MTX_NEW			0x00000000
 
+/* No Giant lock on this port. */
+#define DROP_GIANT()	do { } while (0)
+#define PICKUP_GIANT()	do { } while (0)
+
 
 #endif /* _LKPI_HAIKU_SYS_MUTEX_H_ */

@@ -109,6 +109,13 @@ struct proc* pfind(pid_t pid);
 void thread_reap_barrier(void);
 int linux_alloc_current_noop(struct thread* td, int flags);
 
+/* FreeBSD's per-thread lock, as one global spinlock over all shadow
+ * threads (only linux_rcu.c's priority boosting takes it). */
+void lkpi_thread_lock(struct thread* td);
+void lkpi_thread_unlock(struct thread* td);
+#define thread_lock(td)		lkpi_thread_lock(td)
+#define thread_unlock(td)	lkpi_thread_unlock(td)
+
 /* Locked around the (one-entry) process list, as FreeBSD's is. */
 struct sx;
 extern struct sx allproc_lock;

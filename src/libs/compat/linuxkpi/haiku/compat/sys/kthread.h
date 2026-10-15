@@ -16,6 +16,7 @@
 
 #include <sys/pcpu.h>
 #include <sys/priority.h>
+#include <sys/sched.h>		/* sched_prio, sched_add, thread model */
 
 
 #define SRQ_BORING	0
@@ -23,18 +24,11 @@
 __BEGIN_DECLS
 int lkpi_kthread_add(void (*func)(void*), void* arg, void* p,
 	struct thread** newtdp, int flags, int pages, const char* fmt, ...);
-void lkpi_sched_prio(struct thread* td, u_char prio);
-void lkpi_sched_add(struct thread* td, int flags);
 void lkpi_kthread_exit(void);
 __END_DECLS
 
 #define kthread_add		lkpi_kthread_add
-#define sched_prio		lkpi_sched_prio
-#define sched_add		lkpi_sched_add
 #define kthread_exit	lkpi_kthread_exit
-
-#define thread_lock(td)
-#define thread_unlock(td)
 
 
 #endif /* _LKPI_HAIKU_SYS_KTHREAD_H_ */
