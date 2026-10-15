@@ -357,12 +357,15 @@ taskqueue_run_locked(struct taskqueue *queue)
 
 		KASSERT(task->ta_func != NULL, ("task->ta_func is NULL"));
 #ifdef __HAIKU__
-		if ((task->ta_flags & TASK_NEEDSGIANT) != 0)
+		/* The task may free itself from inside ta_func (LinuxKPI's
+		 * firmware tasks do); never touch *task after calling it. */
+		bool needsGiant = (task->ta_flags & TASK_NEEDSGIANT) != 0;
+		if (needsGiant)
 			mtx_lock(&Giant);
 #endif
 		task->ta_func(task->ta_context, pending);
 #ifdef __HAIKU__
-		if ((task->ta_flags & TASK_NEEDSGIANT) != 0)
+		if (needsGiant)
 			mtx_unlock(&Giant);
 #endif
 
