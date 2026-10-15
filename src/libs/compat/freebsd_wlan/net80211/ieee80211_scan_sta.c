@@ -1278,6 +1278,21 @@ sta_pick_bss(struct ieee80211_scan_state *ss, struct ieee80211vap *vap)
 		    "%s: nopick; return 1\n", __func__);
 		return 1;
 	}
+#ifdef __HAIKU__
+	/*
+	 * We never want to join if not explicitly looking for an SSID (see
+	 * the matching check in ieee80211_check_scan(), which only covers
+	 * that entry point). A scan can end twice - the cache-hot check
+	 * consumes NOPICK and the scan task's own end then picks - and with
+	 * no desired SSID any open network matches. Explicit joins set an
+	 * SSID (net_server) or go through MLME (wpa_supplicant).
+	 */
+	if (vap->iv_des_nssid == 0) {
+		IEEE80211_DPRINTF(vap, IEEE80211_MSG_SCAN,
+		    "%s: no desired ssid; return 1\n", __func__);
+		return 1;
+	}
+#endif
 	/*
 	 * Automatic sequencing; look for a candidate and
 	 * if found join the network.
