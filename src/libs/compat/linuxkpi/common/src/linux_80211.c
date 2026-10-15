@@ -2873,7 +2873,18 @@ lkpi_sta_scan_to_auth(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	/* Set bss info (bss_info_changed). */
 	bss_changed = 0;
 	IEEE80211_ADDR_COPY(vif->cfg.ap_addr, ni->ni_bssid);
+#if defined(__HAIKU__)
+	/*
+	 * net80211 on this port frees nodes immediately (no NET_EPOCH
+	 * deferral), and the RX path reads bss_conf.bssid locklessly
+	 * (e.g. rtw88's rtw_rx_addr_match_iter): aliasing ni->ni_bssid
+	 * page-faulted on a reclaimed node. Keep a per-vif copy.
+	 */
+	IEEE80211_ADDR_COPY(lvif->lvif_bssid, ni->ni_bssid);
+	vif->bss_conf.bssid = lvif->lvif_bssid;
+#else
 	vif->bss_conf.bssid = ni->ni_bssid;
+#endif
 	bss_changed |= BSS_CHANGED_BSSID;
 	vif->bss_conf.txpower = ni->ni_txpower;
 	bss_changed |= BSS_CHANGED_TXPOWER;

@@ -246,6 +246,13 @@ struct lkpi_vif {
 
 	bool			hw_queue_stopped[IEEE80211_NUM_ACS];
 
+#if defined(__HAIKU__)
+	/* net80211 on this port frees nodes immediately (no NET_EPOCH
+	 * deferral), so bss_conf.bssid must not alias ni->ni_bssid; it
+	 * points to this per-vif copy instead (see lkpi_sta_scan_to_auth()). */
+	uint8_t			lvif_bssid[ETH_ALEN];
+#endif
+
 	/* Must be last! */
 	struct ieee80211_vif	vif __aligned(CACHE_LINE_SIZE);
 };
