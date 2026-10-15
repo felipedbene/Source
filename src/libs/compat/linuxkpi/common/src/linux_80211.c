@@ -4549,6 +4549,19 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 
 	ieee80211_vap_setup(ic, vap, name, unit, opmode, flags, bssid);
 
+#if defined(__HAIKU__)
+	/*
+	 * On Haiku, network selection belongs to net_server and the
+	 * wpa_supplicant (which drives joins via MLME). With net80211's
+	 * default auto-roaming and no SSID set, the vap joined the strongest
+	 * open network on its own whenever idle - and re-picked BSSes in the
+	 * middle of supplicant-driven WPA joins, which aborted them. Start in
+	 * manual roaming; the supplicant sets it explicitly anyway.
+	 */
+	if (opmode == IEEE80211_M_STA)
+		vap->iv_roaming = IEEE80211_ROAMING_MANUAL;
+#endif
+
 	/* Now we have a valid vap->iv_ifp.  Any checksum offloading goes below. */
 
 	IMPROVE();
