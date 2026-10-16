@@ -4077,6 +4077,19 @@ lkpi_iv_newstate(struct ieee80211vap *vap, enum ieee80211_state nstate, int arg)
 		/* No need to replicate this in most state handlers. */
 		if (nstate > IEEE80211_S_SCAN)
 			lkpi_stop_hw_scan(lhw, vif);
+#if defined(__HAIKU__)
+		/*
+		 * The same for a software scan: when the hw_scan fallback
+		 * (lkpi_sw_scan_task) is running while the supplicant joins
+		 * via MLME, the scan keeps hopping channels during AUTH and
+		 * the AP's responses are never heard. sta_newstate() only
+		 * cancels scans when leaving states other than SCAN, as it
+		 * expects the scan's own pick to be what moves on from SCAN.
+		 * The ic lock is recursive, like in sta_newstate().
+		 */
+		if (nstate > IEEE80211_S_SCAN && ostate == IEEE80211_S_SCAN)
+			ieee80211_cancel_scan(vap);
+#endif
 
 		s = sta_state_fsm;
 
@@ -5446,6 +5459,16 @@ lkpi_sw_scan_task(void *arg, int pending __unused)
 
 	TRACE_SCAN(vap->iv_ic, "Triggering SW_SCAN: pending %d, scan_flags %b",
 	    pending, lhw->scan_flags, LKPI_LHW_SCAN_BITS);
+
+#if defined(__HAIKU__)
+	/* A join may have started since the fallback was queued; a scan
+	 * now would take the radio off the BSS channel in mid-handshake. */
+	if (vap->iv_state != IEEE80211_S_SCAN) {
+		TRACE_SCAN(vap->iv_ic, "Skipping SW_SCAN: vap state %d",
+		    vap->iv_state);
+		return;
+	}
+#endif
 
 	/*
 	 * This will call ic_scan_start() and we will get into the right path
