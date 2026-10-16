@@ -18,6 +18,11 @@ extern "C" {
 
 phys_addr_t vm_page_max_address();
 	// declared in <vm/vm_page.h> which we can't include here.
+status_t vm_memcpy_from_physical(void* to, phys_addr_t from, size_t length,
+	bool user);
+status_t vm_memcpy_to_physical(phys_addr_t to, const void* from, size_t length,
+	bool user);
+	// declared in the kernel's <vm/vm.h>, shadowed here by compat/vm/vm.h.
 }
 
 
@@ -57,6 +62,7 @@ struct bus_dmamap {
 
 		BUFFER_TYPE_SIMPLE,
 		BUFFER_TYPE_MBUF,
+		BUFFER_TYPE_PHYS,
 	} buffer_type;
 	union {
 		struct {
@@ -64,6 +70,10 @@ struct bus_dmamap {
 			bus_size_t			buffer_length;
 		};
 		struct mbuf*		mbuf;
+		struct {
+			phys_addr_t			phys_buffer;
+			bus_size_t			phys_buffer_length;
+		};
 	};
 };
 
@@ -498,6 +508,58 @@ bus_dmamap_load_mbuf(bus_dma_tag_t dmat, bus_dmamap_t map, struct mbuf* mb,
 }
 
 
+/*!	FreeBSD's physical-address load (used by LinuxKPI's DMA mapping). The
+	range must be physically contiguous, as callers guarantee. If the device
+	cannot reach it, it is bounced like a virtual load, with the copies done
+	through the physical address at sync time.
+	As on FreeBSD, \a *segp is the index of the last segment used, -1 on
+	entry for a fresh load; \a segs may be NULL to use the map's segments.
+*/
+extern "C" int
+_bus_dmamap_load_phys(bus_dma_tag_t dmat, bus_dmamap_t map, vm_paddr_t buf,
+	bus_size_t buflen, int flags, bus_dma_segment_t* segs, int* segp)
+{
+	if (buflen == 0 || buflen > dmat->maxsize)
+		return EINVAL;
+	if (segs == NULL)
+		segs = map->segments;
+
+	const vm_paddr_t last = buf + buflen - 1;
+	if (_validate_address(dmat, buf) && _validate_address(dmat, last, false)
+			&& buflen <= dmat->maxsegsz
+			&& (dmat->boundary == 0
+				|| (buf & ~(dmat->boundary - 1))
+					== (last & ~(dmat->boundary - 1)))) {
+		(*segp)++;
+		if (*segp >= (int)dmat->maxsegments)
+			return EFBIG;
+		segs[*segp].ds_addr = buf;
+		segs[*segp].ds_len = buflen;
+		return 0;
+	}
+
+	int error = _prepare_bounce_buffer(map, buflen, flags);
+	if (error != 0)
+		return error;
+
+	map->buffer_type = bus_dmamap::BUFFER_TYPE_PHYS;
+	map->phys_buffer = buf;
+	map->phys_buffer_length = buflen;
+
+	bus_addr_t lastaddr = 0;
+	int seg = *segp + 1;
+	error = _bus_load_buffer(dmat, map->bounce_buffer, buflen, flags,
+		lastaddr, segs, seg, true);
+	if (error != 0) {
+		map->buffer_type = bus_dmamap::BUFFER_NONE;
+		return error;
+	}
+
+	*segp = seg;
+	return 0;
+}
+
+
 extern "C" void
 bus_dmamap_unload(bus_dma_tag_t dmat, bus_dmamap_t map)
 {
@@ -529,6 +591,10 @@ bus_dmamap_sync(bus_dma_tag_t dmat, bus_dmamap_t map, bus_dmasync_op_t op)
 
 		case bus_dmamap::BUFFER_TYPE_MBUF:
 			length = map->mbuf->m_pkthdr.len;
+			break;
+
+		case bus_dmamap::BUFFER_TYPE_PHYS:
+			length = map->phys_buffer_length;
 			break;
 
 		default:
@@ -565,6 +631,13 @@ bus_dmamap_sync_etc(bus_dma_tag_t dmat, bus_dmamap_t map,
 					(caddr_t)map->bounce_buffer + offset);
 				break;
 
+			case bus_dmamap::BUFFER_TYPE_PHYS:
+				KASSERT((offset + length) <= map->phys_buffer_length,
+					("mis-sized sync"));
+				vm_memcpy_from_physical((caddr_t)map->bounce_buffer + offset,
+					map->phys_buffer + offset, length, false);
+				break;
+
 			default:
 				panic("unknown buffer type");
 		}
@@ -591,6 +664,13 @@ bus_dmamap_sync_etc(bus_dma_tag_t dmat, bus_dmamap_t map,
 			case bus_dmamap::BUFFER_TYPE_MBUF:
 				m_copyback(map->mbuf, offset, length,
 					(caddr_t)map->bounce_buffer + offset);
+				break;
+
+			case bus_dmamap::BUFFER_TYPE_PHYS:
+				KASSERT((offset + length) <= map->phys_buffer_length,
+					("mis-sized sync"));
+				vm_memcpy_to_physical(map->phys_buffer + offset,
+					(caddr_t)map->bounce_buffer + offset, length, false);
 				break;
 
 			default:

@@ -495,7 +495,8 @@ vga_pci_unmap_bios(device_t dev __unused, void* bios __unused)
 
 
 /* -------------------------------------------------------------------- */
-/* busdma: the physical-address loader linux_pci.c maps DMA with. */
+/* busdma: _bus_dmamap_load_phys() itself lives in freebsd_network's
+ * bus_dma.cpp, which can bounce what a device's DMA mask excludes. */
 
 bool
 bus_dma_id_mapped(bus_dma_tag_t dmat __unused, vm_paddr_t buf __unused,
@@ -503,31 +504,4 @@ bus_dma_id_mapped(bus_dma_tag_t dmat __unused, vm_paddr_t buf __unused,
 {
 	/* no IOMMU identity window; always take the mapping path */
 	return false;
-}
-
-
-int
-_bus_dmamap_load_phys(bus_dma_tag_t dmat __unused, bus_dmamap_t map __unused,
-	vm_paddr_t buf, bus_size_t buflen, int flags __unused,
-	bus_dma_segment_t* segs, int* segp)
-{
-	/*
-	 * No bounce buffering: on this port the x86 bus address of memory is
-	 * its physical address. Haiku's physical allocators already honor the
-	 * requested ranges for coherent memory; a device whose DMA mask ever
-	 * excludes an mbuf/skb address would need real bouncing here.
-	 */
-	/* XXX bring-up diagnostic (crash #6): trace the first mappings. */
-	{
-		static int sTraced = 0;
-		if (sTraced < 64) {
-			sTraced++;
-			printf("lkpi: dmamap_load_phys #%d: phys 0x%lx len %lu\n",
-				sTraced, (unsigned long)buf, (unsigned long)buflen);
-		}
-	}
-	(*segp)++;
-	segs[*segp].ds_addr = buf;
-	segs[*segp].ds_len = buflen;
-	return 0;
 }

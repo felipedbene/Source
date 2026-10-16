@@ -9,9 +9,10 @@
 
 /*
  * Extends freebsd_network's <sys/bus_dma.h> with the newer busdma calls
- * linux_pci.c's DMA mapping uses; implemented in the lkpi_pci shim (the
- * physical-address load is load-bearing for every DMA mapping the
- * driver makes).
+ * linux_pci.c's DMA mapping uses: bus_dma_id_mapped() is in the lkpi_pci
+ * shim, _bus_dmamap_load_phys() in freebsd_network's bus_dma.cpp (which
+ * bounces what the device's DMA mask cannot reach). The physical-address
+ * load is load-bearing for every DMA mapping the driver makes.
  */
 
 #include_next <sys/bus_dma.h>
