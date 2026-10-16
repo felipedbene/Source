@@ -943,49 +943,6 @@ static int rtw_pci_write_data_rsvd_page(struct rtw_dev *rtwdev, u8 *buf,
 	reg_bcn_work |= BIT_PCI_BCNQ_FLAG;
 	rtw_write8(rtwdev, RTK_PCI_TXBD_BCN_WORK, reg_bcn_work);
 
-#if defined(__HAIKU__)
-	/* XXX bring-up diagnostic: did the chip consume the beacon-queue
-	 * entry, i.e. actually fetch the data from host memory? */
-	{
-		struct rtw_pci *rtwpci = (struct rtw_pci *)rtwdev->priv;
-		u16 cmd = 0;
-		int i;
-
-		for (i = 0; i < 200; i++) {
-			if (!(rtw_read8(rtwdev, RTK_PCI_TXBD_BCN_WORK)
-					& BIT_PCI_BCNQ_FLAG))
-				break;
-			udelay(100);
-		}
-		pci_read_config_word(rtwpci->pdev, PCI_COMMAND, &cmd);
-		rtw_err(rtwdev, "bcnq work bit %s after %d us, pci cmd 0x%04x\n",
-		    (rtw_read8(rtwdev, RTK_PCI_TXBD_BCN_WORK)
-				& BIT_PCI_BCNQ_FLAG) ? "still set" : "cleared",
-		    i * 100, cmd);
-
-		/* Ring base register readback and the CPU-visible BD. */
-		{
-			struct rtw_pci_tx_ring *bcn =
-			    &rtwpci->tx_rings[RTW_TX_QUEUE_BCN];
-			const u32 *bd = (const u32 *)bcn->r.head;
-
-			rtw_err(rtwdev,
-			    "bcn ring: reg 0x%08x dma 0x%08x bd %08x %08x %08x %08x\n",
-			    rtw_read32(rtwdev, RTK_PCI_TXBD_DESA_BCNQ),
-			    (u32)bcn->r.dma, bd[0], bd[1], bd[2], bd[3]);
-		}
-
-		/* Did download_firmware_reg_backup()'s sub-dword writes land?
-		 * Also compares byte reads with the containing dword. */
-		rtw_err(rtwdev,
-		    "dl regs: pqmap8 0x%02x pqmap32 0x%08x cr8 0x%02x fifopage1 0x%04x\n",
-		    rtw_read8(rtwdev, REG_TXDMA_PQ_MAP + 1),
-		    rtw_read32(rtwdev, REG_TXDMA_PQ_MAP),
-		    rtw_read8(rtwdev, REG_CR),
-		    rtw_read16(rtwdev, REG_FIFOPAGE_INFO_1));
-	}
-#endif
-
 	return 0;
 }
 

@@ -4560,6 +4560,8 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	 */
 	if (opmode == IEEE80211_M_STA)
 		vap->iv_roaming = IEEE80211_ROAMING_MANUAL;
+	/* XXX bring-up diagnostic: net80211 scan decisions. */
+	vap->iv_debug |= IEEE80211_MSG_SCAN;
 #endif
 
 	/* Now we have a valid vap->iv_ifp.  Any checksum offloading goes below. */
