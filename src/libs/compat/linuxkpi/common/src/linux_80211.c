@@ -184,6 +184,9 @@ static void lkpi_sw_scan_task(void *, int);
 static void lkpi_80211_txq_tx_one(struct lkpi_sta *, struct mbuf *);
 static void lkpi_80211_txq_task(void *, int);
 static void lkpi_80211_lhw_rxq_task(void *, int);
+#if defined(__HAIKU__)
+static void lkpi_80211_txq_wake_task(void *, int);
+#endif
 static void lkpi_ieee80211_free_skb_mbuf(void *);
 #ifdef LKPI_80211_WME
 static int lkpi_wme_update(struct lkpi_hw *, struct ieee80211vap *, bool);
@@ -4837,6 +4840,13 @@ lkpi_ic_vap_delete(struct ieee80211vap *vap)
 	TAILQ_REMOVE(&lhw->lvif_head, lvif, lvif_entry);
 	LKPI_80211_LHW_LVIF_UNLOCK(lhw);
 
+#if defined(__HAIKU__)
+	/* A running lkpi_80211_txq_wake_task() may still use the lvif. */
+	while (taskqueue_cancel(taskqueue_thread, &lhw->txq_wake_task,
+	    NULL) != 0)
+		taskqueue_drain(taskqueue_thread, &lhw->txq_wake_task);
+#endif
+
 	wiphy_lock(hw->wiphy);
 	list_del_rcu(&lvif->wdev.list);
 	wiphy_unlock(hw->wiphy);
@@ -7646,6 +7656,10 @@ linuxkpi_ieee80211_alloc_hw(size_t priv_len, const struct ieee80211_ops *ops)
 	INIT_LIST_HEAD(&lhw->lchanctx_list_reserved);
 	lhw->emulate_chanctx = emuchanctx;
 
+#if defined(__HAIKU__)
+	TASK_INIT(&lhw->txq_wake_task, 0, lkpi_80211_txq_wake_task, lhw);
+#endif
+
 	/* Deferred RX path. */
 	LKPI_80211_LHW_RXQ_LOCK_INIT(lhw);
 	TASK_INIT(&lhw->rxq_task, 0, lkpi_80211_lhw_rxq_task, lhw);
@@ -7679,6 +7693,11 @@ linuxkpi_ieee80211_iffree(struct ieee80211_hw *hw)
 	int ac;
 
 	lhw = HW_TO_LHW(hw);
+#if defined(__HAIKU__)
+	while (taskqueue_cancel(taskqueue_thread, &lhw->txq_wake_task,
+	    NULL) != 0)
+		taskqueue_drain(taskqueue_thread, &lhw->txq_wake_task);
+#endif
 	free(lhw->ic, M_LKPI80211);
 	lhw->ic = NULL;
 
@@ -10023,6 +10042,86 @@ linuxkpi_ieee80211_stop_queues(struct ieee80211_hw *hw)
 }
 
 
+#if defined(__HAIKU__)
+/*
+ * Wake the driver for every txq with frames that is not stopped; queued by
+ * lkpi_ieee80211_wake_queues(), which must not call into the driver.
+ *
+ * Runs under the wiphy lock, like lkpi_80211_txq_tx_one(): stas join and
+ * leave lvif->lsta_list, and the driver, only under it, so a sta cannot go
+ * away while it is being woken.  The LVIF lock is only held to snapshot the
+ * vif list and never across the driver call: rtw88 stops a full queue with
+ * its txq_lock and irq_lock held, and linuxkpi_ieee80211_stop_queue() takes
+ * the LVIF lock, while its wake_tx_queue takes txq_lock.
+ * lkpi_ic_vap_delete() drains this task after unlinking its lvif, so the
+ * snapshot stays valid.
+ */
+#define	LKPI_TXQ_WAKE_VIFS	4
+
+static void
+lkpi_80211_txq_wake_task(void *ctx, int pending __unused)
+{
+	struct lkpi_vif *lvifs[LKPI_TXQ_WAKE_VIFS];
+	struct lkpi_hw *lhw;
+	struct ieee80211_hw *hw;
+	struct lkpi_vif *lvif;
+	struct lkpi_sta *lsta;
+	int i, n, skip, tid;
+	bool more;
+
+	lhw = ctx;
+	hw = LHW_TO_HW(lhw);
+
+	wiphy_lock(hw->wiphy);
+	for (skip = 0;; skip += n) {
+		n = 0;
+		i = 0;
+		more = false;
+		LKPI_80211_LHW_LVIF_LOCK(lhw);
+		TAILQ_FOREACH(lvif, &lhw->lvif_head, lvif_entry) {
+			if (i++ < skip)
+				continue;
+			if (n == nitems(lvifs)) {
+				more = true;
+				break;
+			}
+			lvifs[n++] = lvif;
+		}
+		LKPI_80211_LHW_LVIF_UNLOCK(lhw);
+
+		for (i = 0; i < n; i++) {
+			list_for_each_entry(lsta, &lvifs[i]->lsta_list,
+			    lsta_list) {
+				struct ieee80211_sta *sta;
+
+				if (!lsta->added_to_drv)
+					continue;
+				sta = LSTA_TO_STA(lsta);
+				for (tid = 0; tid < nitems(sta->txq); tid++) {
+					struct lkpi_txq *ltxq;
+					bool wake;
+
+					if (sta->txq[tid] == NULL)
+						continue;
+					ltxq = TXQ_TO_LTXQ(sta->txq[tid]);
+					LKPI_80211_LTXQ_LOCK(ltxq);
+					wake = (ltxq->flags & (LKPI_TXQ_STOPPED |
+					    LKPI_TXQ_STOPPED_BA)) == 0 &&
+					    !skb_queue_empty(&ltxq->skbq);
+					LKPI_80211_LTXQ_UNLOCK(ltxq);
+					if (wake)
+						lkpi_80211_mo_wake_tx_queue(hw,
+						    sta->txq[tid], false);
+				}
+			}
+		}
+		if (!more)
+			break;
+	}
+	wiphy_unlock(hw->wiphy);
+}
+#endif
+
 static void
 lkpi_ieee80211_wake_queues(struct ieee80211_hw *hw, int hwq)
 {
@@ -10030,6 +10129,11 @@ lkpi_ieee80211_wake_queues(struct ieee80211_hw *hw, int hwq)
 	struct lkpi_vif *lvif;
 	struct lkpi_sta *lsta;
 	int ac_count, ac, tid;
+#if defined(__HAIKU__)
+	bool wake;
+
+	wake = false;
+#endif
 
 	/* See lkpi_ic_vap_create(). */
 	if (hw->queues >= IEEE80211_NUM_ACS)
@@ -10081,27 +10185,25 @@ lkpi_ieee80211_wake_queues(struct ieee80211_hw *hw, int hwq)
 
 						ltxq = TXQ_TO_LTXQ(sta->txq[tid]);
 #if defined(__HAIKU__)
-						/*
-						 * See linuxkpi_ieee80211_tx_dequeue().
-						 * Unlock before waking: drivers may
-						 * dequeue from the wake call.
-						 */
+						/* See linuxkpi_ieee80211_tx_dequeue(). */
 						LKPI_80211_LTXQ_LOCK(ltxq);
 						if ((ltxq->flags & LKPI_TXQ_STOPPED) == 0) {
 							LKPI_80211_LTXQ_UNLOCK(ltxq);
 							continue;
 						}
 						ltxq->flags &= ~LKPI_TXQ_STOPPED;
+						if (!skb_queue_empty(&ltxq->skbq))
+							wake = true;
 						LKPI_80211_LTXQ_UNLOCK(ltxq);
 #else
 						if ((ltxq->flags & LKPI_TXQ_STOPPED) == 0)
 							continue;
 
 						ltxq->flags &= ~LKPI_TXQ_STOPPED;
-#endif
 
 						if (!skb_queue_empty(&ltxq->skbq))
 							lkpi_80211_mo_wake_tx_queue(hw, sta->txq[tid], false);
+#endif
 					}
 				}
 				rcu_read_unlock();
@@ -10109,6 +10211,20 @@ lkpi_ieee80211_wake_queues(struct ieee80211_hw *hw, int hwq)
 		}
 	}
 	LKPI_80211_LHW_LVIF_UNLOCK(lhw);
+
+#if defined(__HAIKU__)
+	/*
+	 * Drivers call ieee80211_wake_queue() from TX completion with their
+	 * own locks held (rtw88: rtwpci->irq_lock), and their wake_tx_queue
+	 * takes the lock their TX path holds while it takes those (rtw88:
+	 * rtwdev->txq_lock, then irq_lock to push a frame), so waking the
+	 * driver from here deadlocks; for rtw88's VO queue the wake even
+	 * pushes inline and re-takes irq_lock.  mac80211 defers the wake to a
+	 * tasklet; do the same.
+	 */
+	if (wake)
+		taskqueue_enqueue(taskqueue_thread, &lhw->txq_wake_task);
+#endif
 }
 
 static void

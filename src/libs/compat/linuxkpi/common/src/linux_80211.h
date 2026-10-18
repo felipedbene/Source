@@ -293,6 +293,11 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 	TAILQ_HEAD(, lkpi_txq)		txq_scheduled[IEEE80211_NUM_ACS];
 	spinlock_t			txq_lock;
 
+#if defined(__HAIKU__)
+	/* Driver wake for txqs restarted by ieee80211_wake_queue(s). */
+	struct task		txq_wake_task;
+#endif
+
 	/* Deferred RX path. */
 	struct task		rxq_task;
 	struct mbufq		rxq;
