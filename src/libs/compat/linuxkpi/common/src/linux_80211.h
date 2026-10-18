@@ -498,6 +498,9 @@ void lkpi_80211_mo_configure_filter(struct ieee80211_hw *, unsigned int,
     unsigned int *, u64);
 int lkpi_80211_mo_sta_state(struct ieee80211_hw *, struct ieee80211_vif *,
     struct lkpi_sta *, enum ieee80211_sta_state);
+#if defined(__HAIKU__)
+void lkpi_80211_purge_sta_txqs(struct ieee80211_sta *);
+#endif
 int lkpi_80211_mo_config(struct ieee80211_hw *, uint32_t);
 int lkpi_80211_mo_assign_vif_chanctx(struct ieee80211_hw *, struct ieee80211_vif *,
     struct ieee80211_bss_conf *, struct ieee80211_chanctx_conf *);

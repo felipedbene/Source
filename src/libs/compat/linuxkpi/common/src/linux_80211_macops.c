@@ -408,9 +408,15 @@ lkpi_80211_mo_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct lkpi_hw *lhw;
 	struct ieee80211_sta *sta;
 	int error;
+#if defined(__HAIKU__)
+	bool was_added;
+#endif
 
 	lhw = HW_TO_LHW(hw);
 	sta = LSTA_TO_STA(lsta);
+#if defined(__HAIKU__)
+	was_added = lsta->added_to_drv;
+#endif
 	if (lhw->ops->sta_state != NULL) {
 		LKPI_80211_TRACE_MO("hw %p vif %p sta %p nstate %d", hw, vif, sta, nstate);
 		error = lhw->ops->sta_state(hw, vif, sta, lsta->state, nstate);
@@ -441,6 +447,11 @@ lkpi_80211_mo_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		lsta->state = nstate;
 
 out:
+#if defined(__HAIKU__)
+	/* Frames the driver can no longer dequeue; see the function. */
+	if (was_added && !lsta->added_to_drv)
+		lkpi_80211_purge_sta_txqs(sta);
+#endif
 	/* XXX-BZ should we manage state in here? */
 	return (error);
 }

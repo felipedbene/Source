@@ -1185,6 +1185,38 @@ cleanup:
 	return (NULL);
 }
 
+#if defined(__HAIKU__)
+/*
+ * The driver no longer knows the sta, so nothing will dequeue the frames
+ * left on its txqs.  Each holds a reference on the node, which keeps
+ * lkpi_ic_node_free() and so lkpi_lsta_free() from ever running; free
+ * them.  Callers hold the lvif_bss reference, so this never drops the
+ * last one.
+ */
+void
+lkpi_80211_purge_sta_txqs(struct ieee80211_sta *sta)
+{
+	struct lkpi_txq *ltxq;
+	struct sk_buff *skb;
+	int tid;
+
+	for (tid = 0; tid < nitems(sta->txq); tid++) {
+		if (sta->txq[tid] == NULL)
+			continue;
+		ltxq = TXQ_TO_LTXQ(sta->txq[tid]);
+		for (;;) {
+			LKPI_80211_LTXQ_LOCK(ltxq);
+			skb = skb_dequeue(&ltxq->skbq);
+			LKPI_80211_LTXQ_UNLOCK(ltxq);
+			if (skb == NULL)
+				break;
+			/* Frees the mbuf and releases the reference on the ni. */
+			dev_kfree_skb(skb);
+		}
+	}
+}
+#endif
+
 static void
 lkpi_lsta_free(struct lkpi_sta *lsta, struct ieee80211_node *ni)
 {
