@@ -48,7 +48,12 @@ MODULE_PARM_DESC(support_bf, "Set Y to enable beamformee support");
 MODULE_PARM_DESC(debug_mask, "Debugging mask");
 
 #if defined(__FreeBSD__)
+#if defined(__HAIKU__)
+/* No tunable/kenv mechanism to flip this at load time, so default HT on. */
+static bool rtw_ht_support = true;
+#else
 static bool rtw_ht_support = false;
+#endif
 module_param_named(support_ht, rtw_ht_support, bool, 0644);
 MODULE_PARM_DESC(support_ht, "Set to Y to enable HT support");
 
