@@ -6638,6 +6638,12 @@ lkpi_ic_ampdu_enable(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap)
 	return (lhw->ic_ampdu_enable(ni, tap));
 }
 
+#if defined(__HAIKU__)
+/* TX ADDBA attempts before backing off, and the backoff (as mac80211). */
+#define	LKPI_ADDBA_MAXTRIES	3
+#define	LKPI_ADDBA_BACKOFF_MS	15000
+#endif
+
 /*
  * (*ic_addba_request)() is called by ieee80211_ampdu_request() before
  * calling send_action(CAT_BA, BA_ADDBA_REQUEST).
@@ -6889,6 +6895,16 @@ lkpi_ic_addba_response_timeout(struct ieee80211_node *ni, struct ieee80211_tx_am
 	TRACEOK("ADDBA RESP TIMEO tid %u", tap->txa_tid);
 
 	IMPROVE_HT();
+
+#if defined(__HAIKU__)
+	/*
+	 * addba_timeout() already counted this attempt.  Its
+	 * addba_start_timeout() overwrites txa_nextrequest on every request,
+	 * so set the backoff here; see linuxkpi_ieee80211_start_tx_ba_session().
+	 */
+	if (tap->txa_attempts >= LKPI_ADDBA_MAXTRIES)
+		tap->txa_nextrequest = ticks + msecs_to_ticks(LKPI_ADDBA_BACKOFF_MS);
+#endif
 
 	if (!lsta->added_to_drv) {
 		ic_printf(ic, "%s: lsta %p ni %p, sta %p not added to firmware\n",
@@ -7170,6 +7186,23 @@ linuxkpi_ieee80211_start_tx_ba_session(struct ieee80211_sta *sta, uint8_t tid,
 		    "AMPDU requested/running\n", __func__);
 		return (-EINPROGRESS);
 	}
+
+#if defined(__HAIKU__)
+	/*
+	 * With IEEE80211_FEXT_AMPDU_OFFLOAD net80211 never calls
+	 * ic_ampdu_enable(), the only place that limits ADDBA retries, and
+	 * every attempt stops the TID's txq (LKPI_TXQ_STOPPED_BA) until the
+	 * response or the timeout.  Back off after LKPI_ADDBA_MAXTRIES
+	 * timeouts like mac80211 does; lkpi_ic_addba_response_timeout()
+	 * sets txa_nextrequest.  Not -EINVAL: rtw88 would then block BA
+	 * for the sta for good.
+	 */
+	if (tap->txa_attempts >= LKPI_ADDBA_MAXTRIES) {
+		if (ieee80211_time_before(ticks, tap->txa_nextrequest))
+			return (-EBUSY);
+		tap->txa_attempts = 0;
+	}
+#endif
 
 	/* Tell net80211 to setup an aggr sessions. */
 	/* XXX-BZ we have no way to carry the timeout forward easily. */
