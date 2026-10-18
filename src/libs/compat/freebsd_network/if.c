@@ -334,7 +334,8 @@ if_attach(struct ifnet *ifp)
 	TAILQ_INIT(&ifp->if_prefixhead);
 	TAILQ_INIT(&ifp->if_multiaddrs);
 
-	IF_ADDR_LOCK_INIT(ifp);
+	/* The address lock lives from if_alloc_inplace() to
+	 * if_free_inplace(), as in FreeBSD. */
 
 	ifp->if_lladdr.sdl_family = AF_LINK;
 
@@ -391,7 +392,9 @@ if_detach(struct ifnet *ifp)
 	if (HAIKU_DRIVER_REQUIRES(FBSD_SWI_TASKQUEUE))
 		taskqueue_drain(taskqueue_swi, &ifp->if_linktask);
 
-	IF_ADDR_LOCK_DESTROY(ifp);
+	/* Not IF_ADDR_LOCK_DESTROY(): drivers call if_free() after this, and
+	 * if_free_inplace() destroys it - a second mutex_destroy() panics on
+	 * KDEBUG kernels ("held by -32768", the destroyed marker). */
 	ifq_uninit((struct ifqueue *) &ifp->if_snd);
 }
 
