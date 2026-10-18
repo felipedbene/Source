@@ -4623,6 +4623,26 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 
 #ifdef LKPI_80211_HT
 	/* Stay with the iv_ampdu_rxmax,limit / iv_ampdu_density defaults until later. */
+#if defined(__HAIKU__)
+	/*
+	 * net80211's defaults (8 KB, no MPDU spacing) end up in our HT
+	 * capabilities as A-MPDU parameters 0x00, letting the AP pack
+	 * subframes tighter than e.g. the RTL8821C (2 us) can take. Use the
+	 * driver's values as mac80211 does; the encodings are the same.
+	 */
+	{
+		const struct ieee80211_supported_band *sb;
+
+		sb = hw->wiphy->bands[NL80211_BAND_5GHZ];
+		if (sb == NULL || !sb->ht_cap.ht_supported)
+			sb = hw->wiphy->bands[NL80211_BAND_2GHZ];
+		if (sb != NULL && sb->ht_cap.ht_supported) {
+			vap->iv_ampdu_rxmax = sb->ht_cap.ampdu_factor;
+			vap->iv_ampdu_limit = vap->iv_ampdu_rxmax;
+			vap->iv_ampdu_density = sb->ht_cap.ampdu_density;
+		}
+	}
+#endif
 #endif
 
 	ieee80211_ratectl_init(vap);
