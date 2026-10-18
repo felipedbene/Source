@@ -7128,6 +7128,18 @@ lkpi_ic_getradiocaps_ht(struct ieee80211com *ic, struct ieee80211_hw *hw,
 #endif
 }
 
+#if defined(__HAIKU__)
+/*
+ * On Linux the cfg80211 regulatory core fills in channel max_power; drivers
+ * like rtw88 leave it 0 and LinuxKPI has no such core, so net80211 ended up
+ * with 0 dBm channels (and advertised "max 0 dBm" in 802.11h Power
+ * Capability). 20 dBm is what Linux advertises for these chips.
+ */
+#define	LKPI_CHAN_MAXPOWER(_lc)	((_lc)->max_power != 0 ? (_lc)->max_power : 20)
+#else
+#define	LKPI_CHAN_MAXPOWER(_lc)	((_lc)->max_power)
+#endif
+
 static void
 lkpi_ic_getradiocaps(struct ieee80211com *ic, int maxchan,
     int *n, struct ieee80211_channel *c)
@@ -7195,7 +7207,7 @@ lkpi_ic_getradiocaps(struct ieee80211com *ic, int maxchan,
 			error = ieee80211_add_channel_cbw(c, maxchan, n,
 			    ieee80211_mhz2ieee(channels[i].center_freq,
 				lkpi_nl80211_band_to_net80211_band(channels[i].band)),
-			    channels[i].center_freq, channels[i].max_power,
+			    channels[i].center_freq, LKPI_CHAN_MAXPOWER(&channels[i]),
 			    nflags, bands, cflags);
 			/* net80211::ENOBUFS: *n >= maxchans */
 			if (error != 0 && error != ENOBUFS)
@@ -7268,7 +7280,7 @@ lkpi_ic_getradiocaps(struct ieee80211com *ic, int maxchan,
 			error = ieee80211_add_channel_cbw(c, maxchan, n,
 			    ieee80211_mhz2ieee(channels[i].center_freq,
 				lkpi_nl80211_band_to_net80211_band(channels[i].band)),
-			    channels[i].center_freq, channels[i].max_power,
+			    channels[i].center_freq, LKPI_CHAN_MAXPOWER(&channels[i]),
 			    nflags, bands, cflags);
 			/* net80211::ENOBUFS: *n >= maxchans */
 			if (error != 0 && error != ENOBUFS)
