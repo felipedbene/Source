@@ -7110,6 +7110,17 @@ lkpi_ic_getradiocaps_ht(struct ieee80211com *ic, struct ieee80211_hw *hw,
 
 	IMPROVE("PS, ampdu_*, ht_cap.mcs.tx_params, ...");
 
+#if defined(__HAIKU__)
+	/*
+	 * Drivers leave the SM power save field 0, which in 802.11 means
+	 * "static SMPS"; mac80211 advertises "disabled" unless the driver
+	 * claims SMPS support (NL80211_FEATURE_{STATIC,DYNAMIC}_SMPS), and
+	 * so do native net80211 drivers.
+	 */
+	ic->ic_htcaps = (ic->ic_htcaps & ~IEEE80211_HTCAP_SMPS) |
+	    IEEE80211_HTCAP_SMPS_OFF;
+#endif
+
 	/* Only add HT40 channels if supported. */
 	if ((ic->ic_htcaps & IEEE80211_HTCAP_CHWIDTH40) != 0 &&
 	    chan_flags != NULL)
