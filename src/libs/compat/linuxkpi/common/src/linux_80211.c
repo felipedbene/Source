@@ -5581,10 +5581,14 @@ lkpi_sw_scan_task(void *arg, int pending __unused)
 
 #if defined(__HAIKU__)
 	/* A join may have started since the fallback was queued; a scan
-	 * now would take the radio off the BSS channel in mid-handshake. */
-	if (vap->iv_state != IEEE80211_S_SCAN) {
+	 * now would take the radio off the BSS channel in mid-handshake.
+	 * Scanning while associated (RUN) is fine. When skipping, report the
+	 * (cancelled) scan as done or its requester waits forever. */
+	if (vap->iv_state == IEEE80211_S_AUTH ||
+	    vap->iv_state == IEEE80211_S_ASSOC) {
 		TRACE_SCAN(vap->iv_ic, "Skipping SW_SCAN: vap state %d",
 		    vap->iv_state);
+		ieee80211_notify_scan_done(vap);
 		return;
 	}
 #endif
