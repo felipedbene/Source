@@ -4395,6 +4395,13 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	lhw = ic->ic_softc;
 	hw = LHW_TO_HW(lhw);
 
+#if defined(__HAIKU__)
+	/* Re-armed after a previous lkpi_ic_vap_delete() stopped it. */
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	lhw->rxq_stopped = false;
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+#endif
+
 	len = sizeof(*lvif);
 	len += hw->vif_data_size;	/* vif->drv_priv */
 
@@ -4713,6 +4720,52 @@ linuxkpi_ieee80211_restart_hw(struct ieee80211_hw *hw)
 	TODO();
 }
 
+#if defined(__HAIKU__)
+/*
+ * Stop the deferred RX path and drop what it still holds, releasing the
+ * node references the queued frames carry (as linuxkpi_ieee80211_ifdetach()
+ * does). Frames are freed outside the RXQ lock.
+ */
+static void
+lkpi_80211_lhw_rxq_stop_flush(struct lkpi_hw *lhw)
+{
+	struct mbufq mq;
+	struct mbuf *m;
+
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	lhw->rxq_stopped = true;
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+
+	/* Drain taskq, won't be restarted due to rxq_stopped being set. */
+	while (taskqueue_cancel(taskqueue_thread, &lhw->rxq_task, NULL) != 0)
+		taskqueue_drain(taskqueue_thread, &lhw->rxq_task);
+
+	mbufq_init(&mq, IFQ_MAXLEN);
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	mbufq_concat(&mq, &lhw->rxq);
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+
+	while ((m = mbufq_dequeue(&mq)) != NULL) {
+#ifdef LKPI_80211_USE_MTAG
+		struct m_tag *mtag;
+
+		mtag = m_tag_locate(m, MTAG_ABI_LKPI80211, LKPI80211_TAG_RXNI,
+		    NULL);
+		if (mtag != NULL) {
+			struct lkpi_80211_tag_rxni *rxni;
+
+			rxni = (struct lkpi_80211_tag_rxni *)(mtag + 1);
+			ieee80211_free_node(rxni->ni);
+		}
+#else
+		if (m->m_pkthdr.PH_loc.ptr != NULL)
+			ieee80211_free_node(m->m_pkthdr.PH_loc.ptr);
+#endif
+		m_freem(m);
+	}
+}
+#endif
+
 static void
 lkpi_ic_vap_delete(struct ieee80211vap *vap)
 {
@@ -4744,6 +4797,16 @@ lkpi_ic_vap_delete(struct ieee80211vap *vap)
 	wiphy_unlock(hw->wiphy);
 
 	ieee80211_ratectl_deinit(vap);
+#if defined(__HAIKU__)
+	/*
+	 * Haiku's if_free() frees the ifnet right away (FreeBSD defers it),
+	 * and the hardware keeps receiving until mo_stop() below, so frames
+	 * must not reach the ifnet while ieee80211_vap_detach() tears it
+	 * down. Stop and flush the rx queue first, while the nodes the
+	 * queued frames reference still exist.
+	 */
+	lkpi_80211_lhw_rxq_stop_flush(lhw);
+#endif
 	ieee80211_vap_detach(vap);
 
 	IMPROVE("clear up other bits in this state");
