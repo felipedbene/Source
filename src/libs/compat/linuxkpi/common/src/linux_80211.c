@@ -6783,6 +6783,16 @@ lkpi_ic_addba_stop(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap)
 	lvif = VAP_TO_LVIF(vap);
 	vif = LVIF_TO_VIF(lvif);
 	lsta = ni->ni_drv_data;
+#if defined(__HAIKU__)
+	/*
+	 * As lkpi_ic_ampdu_rx_stop(): when a node with a TX BA session is
+	 * freed, lkpi_ic_node_free() frees the lsta before net80211's
+	 * node_free() runs ieee80211_ht_node_cleanup() -> here. The sta is
+	 * gone from the driver by then; only net80211 needs cleaning up.
+	 */
+	if (lsta == NULL)
+		goto n80211;
+#endif
 	sta = LSTA_TO_STA(lsta);
 
 	if (!lsta->added_to_drv) {
