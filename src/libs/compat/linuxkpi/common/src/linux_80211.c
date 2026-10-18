@@ -7642,6 +7642,17 @@ linuxkpi_ieee80211_ifattach(struct ieee80211_hw *hw)
 	/* Does HW support full AMPDU[-TX] offload? */
 	if (ieee80211_hw_check(hw, AMPDU_AGGREGATION))
 		ic->ic_flags_ext |= IEEE80211_FEXT_AMPDU_OFFLOAD;
+
+#if defined(__HAIKU__)
+	/*
+	 * lkpi_80211_txq_tx_one() assigns the sequence number itself, so
+	 * net80211 must not do it as well: otherwise every frame advances the
+	 * per-TID counter twice and each frame leaves a hole. Inside a block
+	 * ack session the peer then holds every frame in its reorder buffer
+	 * until the reorder timeout (~100 ms on the APs this was seen with).
+	 */
+	ic->ic_flags_ext |= IEEE80211_FEXT_SEQNO_OFFLOAD;
+#endif
 #ifdef __notyet__
 	if (ieee80211_hw_check(hw, TX_AMSDU))
 	if (ieee80211_hw_check(hw, SUPPORTS_AMSDU_IN_AMPDU))
