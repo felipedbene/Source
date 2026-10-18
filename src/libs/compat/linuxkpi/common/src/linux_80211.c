@@ -4573,8 +4573,6 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	 */
 	if (opmode == IEEE80211_M_STA)
 		vap->iv_roaming = IEEE80211_ROAMING_MANUAL;
-	/* XXX bring-up diagnostic: net80211 scan decisions. */
-	vap->iv_debug |= IEEE80211_MSG_SCAN;
 #endif
 
 	/* Now we have a valid vap->iv_ifp.  Any checksum offloading goes below. */
@@ -5849,27 +5847,6 @@ lkpi_ic_node_free(struct ieee80211_node *ni)
 		lhw->ic_node_free(ni);
 }
 
-#if defined(__HAIKU__)
-/* XXX bring-up diagnostic: announce EAPOL frames crossing this boundary,
- * to locate where the WPA 4-way handshake stalls. Remove after bring-up. */
-static void
-lkpi_diag_eapol(const char *where, const uint8_t *p, int len)
-{
-	int i;
-
-	if (p == NULL)
-		return;
-	if (len > 64)
-		len = 64;
-	for (i = 0; i + 1 < len; i++) {
-		if (p[i] == 0x88 && p[i + 1] == 0x8e) {
-			printf("lkpi: EAPOL frame at %s (ethertype offset %d)\n",
-			    where, i);
-			return;
-		}
-	}
-}
-#endif
 
 /*
  * lkpi_xmit() called from both the (*ic_raw_xmit) as well as the (*ic_transmit)
@@ -5889,9 +5866,6 @@ lkpi_xmit(struct ieee80211_node *ni, struct mbuf *m,
 	struct lkpi_sta *lsta;
 	int error;
 
-#if defined(__HAIKU__)
-	lkpi_diag_eapol("tx", mtod(m, const uint8_t *), m->m_len);
-#endif
 	lsta = ni->ni_drv_data;
 	LKPI_80211_LSTA_TXQ_LOCK(lsta);
 #if 0
@@ -8441,9 +8415,6 @@ linuxkpi_ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb,
 	uint8_t rssi;
 	bool is_beacon;
 
-#if defined(__HAIKU__)
-	lkpi_diag_eapol("rx", skb->data, skb->len);
-#endif
 	lhw = HW_TO_LHW(hw);
 	ic = lhw->ic;
 
