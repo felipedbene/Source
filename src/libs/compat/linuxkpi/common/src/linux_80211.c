@@ -8693,6 +8693,8 @@ no_trace_beacons:
 
 	ok = ieee80211_add_rx_params(m, &rx_stats);
 	if (ok == 0) {
+		if (ni != NULL)
+			ieee80211_free_node(ni);
 		m_freem(m);
 		counter_u64_add(ic->ic_ierrors, 1);
 		goto err;
@@ -8789,6 +8791,7 @@ skip_device_ts:
 		mtag = m_tag_alloc(MTAG_ABI_LKPI80211, LKPI80211_TAG_RXNI,
 		    sizeof(*rxni), IEEE80211_M_NOWAIT);
 		if (mtag == NULL) {
+			ieee80211_free_node(ni);
 			m_freem(m);
 			counter_u64_add(ic->ic_ierrors, 1);
 			goto err;
@@ -8804,6 +8807,8 @@ skip_device_ts:
 	LKPI_80211_LHW_RXQ_LOCK(lhw);
 	if (lhw->rxq_stopped) {
 		LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+		if (ni != NULL)
+			ieee80211_free_node(ni);
 		m_freem(m);
 		counter_u64_add(ic->ic_ierrors, 1);
 		goto err;
@@ -8812,11 +8817,13 @@ skip_device_ts:
 	error = mbufq_enqueue(&lhw->rxq, m);
 	if (error != 0) {
 		LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+		if (ni != NULL)
+			ieee80211_free_node(ni);
 		m_freem(m);
 		counter_u64_add(ic->ic_ierrors, 1);
 #ifdef LINUXKPI_DEBUG_80211
 		if (linuxkpi_debug_80211 & D80211_TRACE_RX)
-			ic_printf(ni->ni_ic, "%s: mbufq_enqueue failed: %d\n",
+			ic_printf(ic, "%s: mbufq_enqueue failed: %d\n",
 			    __func__, error);
 #endif
 		goto err;
