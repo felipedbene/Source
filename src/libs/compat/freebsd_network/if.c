@@ -11,6 +11,7 @@
 #include "device.h"
 
 #include <stdio.h>
+#include <interrupts.h>
 #include <net/if_types.h>
 #include <sys/sockio.h>
 
@@ -807,8 +808,13 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 	}
 	IF_UNLOCK(&ifp->receive_queue);
 
-	if (count > 0)
-		release_sem_etc(ifp->receive_sem, count, B_DO_NOT_RESCHEDULE);
+	if (count > 0) {
+		/* Wake the reader right away when rescheduling is allowed; with
+		 * B_DO_NOT_RESCHEDULE an idle reader only runs at the next
+		 * scheduling event (see taskqueue_enqueue). */
+		release_sem_etc(ifp->receive_sem, count,
+			are_interrupts_enabled() ? 0 : B_DO_NOT_RESCHEDULE);
+	}
 }
 
 
