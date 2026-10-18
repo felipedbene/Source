@@ -787,6 +787,17 @@ lkpi_80211_mo_link_sta_rc_update(struct ieee80211_hw *hw,
 	if (lhw->ops->link_sta_rc_update == NULL)
 		return;
 
+#if defined(__HAIKU__)
+	/*
+	 * As mac80211 (sta->uploaded): only for a sta the driver knows.
+	 * lkpi_sta_assoc_to_run() syncs bandwidth from the node before the
+	 * sta_add of sta_add/sta_remove drivers; rtw88 then queued its
+	 * not-yet-initialised per-sta rc_work on an HT40 BSS and panicked.
+	 */
+	if (!STA_TO_LSTA(link_sta->sta)->added_to_drv)
+		return;
+#endif
+
 	LKPI_80211_TRACE_MO("hw %p vif %p link_sta %p rc_changed %#010x",
 	    hw, vif, link_sta, rc_changed);
 	lhw->ops->link_sta_rc_update(hw, vif, link_sta, rc_changed);
