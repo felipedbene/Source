@@ -78,29 +78,11 @@ rtw88_probe(device_t dev)
 }
 
 
-/* rtw88's debug trace mask (module parameter on Linux). */
-extern unsigned int rtw_debug_mask;
-/* LinuxKPI's 802.11 bridge trace mask (sysctl on FreeBSD). */
-extern int linuxkpi_debug_80211;
-
 static int
 rtw88_attach(device_t dev)
 {
-	int error;
-
-	/* XXX bring-up diagnostic: firmware tracing only (the full mask
-	 * rotates the syslog within minutes). */
-	rtw_debug_mask = 0x00000010;	/* RTW_DBG_FW */
-	/* XXX bring-up diagnostic: trace the mac80211 bridge scan path
-	 * (D80211_TRACE | D80211_SCAN). */
-	linuxkpi_debug_80211 = 0x00000010 | 0x00000040;
-
 	lkpi_pci_provide_devinfo(dev);
-	error = lkpi_pci_dispatch(dev, ID_device_attach);
-	/* XXX bring-up diagnostic: attach result and busmaster state. */
-	device_printf(dev, "rtw88 attach: %d (pci cmd 0x%04x)\n", error,
-		pci_read_config(dev, PCIR_COMMAND, 2));
-	return error;
+	return lkpi_pci_dispatch(dev, ID_device_attach);
 }
 
 
