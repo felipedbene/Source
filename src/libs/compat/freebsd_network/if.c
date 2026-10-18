@@ -273,6 +273,10 @@ ifq_init(struct ifqueue *ifq, const char *name)
 void
 ifq_uninit(struct ifqueue *ifq)
 {
+	/* Free what is still queued (e.g. received frames nobody read after
+	 * the device was closed): leftover mbufs make uninit_mbufs() panic
+	 * with "cache destroy: still has partial slabs" on driver unload. */
+	IF_DRAIN(ifq);
 	mtx_destroy(&ifq->ifq_mtx);
 }
 
@@ -789,14 +793,22 @@ ether_input(struct ifnet *ifp, struct mbuf *m)
 		struct mbuf *mn = m->m_nextpkt;
 		m->m_nextpkt = NULL;
 
-		_IF_ENQUEUE(&ifp->receive_queue, m);
-		count++;
+		/* Nobody reads a closed device's queue; it would only grow until
+		 * if_free() (the radio may keep receiving after close). */
+		if ((ifp->flags & DEVICE_CLOSED) != 0) {
+			_IF_DROP(&ifp->receive_queue);
+			m_freem(m);
+		} else {
+			_IF_ENQUEUE(&ifp->receive_queue, m);
+			count++;
+		}
 
 		m = mn;
 	}
 	IF_UNLOCK(&ifp->receive_queue);
 
-	release_sem_etc(ifp->receive_sem, count, B_DO_NOT_RESCHEDULE);
+	if (count > 0)
+		release_sem_etc(ifp->receive_sem, count, B_DO_NOT_RESCHEDULE);
 }
 
 

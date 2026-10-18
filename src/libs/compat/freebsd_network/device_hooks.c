@@ -89,6 +89,9 @@ compat_close(void *cookie)
 
 	release_sem_etc(ifp->receive_sem, 1, B_RELEASE_ALL);
 
+	/* Nobody reads frames received from here on; don't keep them. */
+	IF_DRAIN(&ifp->receive_queue);
+
 	IFF_UNLOCKGIANT(ifp);
 	return B_OK;
 }
