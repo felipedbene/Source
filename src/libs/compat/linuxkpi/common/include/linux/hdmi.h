@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: MIT
+ *
  * Copyright (C) 2012 Avionic Design GmbH
  *
  * Permission is hereby granted, free of charge, to any person obtaining a

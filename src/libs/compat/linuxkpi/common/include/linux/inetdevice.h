@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 #ifndef	_LINUXKPI_LINUX_INETDEVICE_H_
 #define	_LINUXKPI_LINUX_INETDEVICE_H_
 

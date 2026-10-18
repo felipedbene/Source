@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-2-Clause */
 /* DO NOT EDIT. This is auto-generated from feature.sh */
 #define CK_F_PR_ADD_16
 #define CK_F_PR_ADD_32

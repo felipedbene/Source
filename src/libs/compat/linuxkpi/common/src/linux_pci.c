@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2015-2016 Mellanox Technologies, Ltd.
  * All rights reserved.
  * Copyright (c) 2020-2026 The FreeBSD Foundation

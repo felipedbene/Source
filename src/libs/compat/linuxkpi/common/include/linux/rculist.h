@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2015 François Tigeot
  * Copyright (c) 2016-2020 Mellanox Technologies, Ltd.
  * All rights reserved.

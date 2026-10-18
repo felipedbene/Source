@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-Public-Domain */
 /* Public domain. */
 
 #ifndef _LINUX_DMA_BUF_MAP_H

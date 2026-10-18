@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright 2010 Samy Al Bahra.
  * All rights reserved.
  *

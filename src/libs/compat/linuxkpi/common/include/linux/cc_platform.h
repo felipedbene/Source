@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-Public-Domain */
 /* Public domain. */
 
 #ifndef _LINUXKPI_LINUX_CC_PLATFORM_H_

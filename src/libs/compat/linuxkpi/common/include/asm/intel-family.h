@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-Public-Domain */
 /* Public domain. */
 
 #define	IFM(_fam, _model)	VFM_MAKE(X86_VENDOR_INTEL, _fam, _model)

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-Public-Domain */
 /* Public domain. */
 
 #ifndef _LINUXKPI_LINUX_KMEMLEAK_H_

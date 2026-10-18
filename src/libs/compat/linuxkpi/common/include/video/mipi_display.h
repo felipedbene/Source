@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-Public-Domain */
 /* Public domain. */
 
 #ifndef _LINUXKPI_VIDEO_MIPI_DISPLAY_H_

@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2018 Limelight Networks, Inc.
  * Copyright (c) 2014-2018 Mellanox Technologies, Ltd.
  * Copyright (c) 2015 François Tigeot

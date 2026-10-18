@@ -1,4 +1,6 @@
 /*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright (c) 2018 Johannes Lundberg <johalun0@gmail.com>
  *
  * Redistribution and use in source and binary forms, with or without

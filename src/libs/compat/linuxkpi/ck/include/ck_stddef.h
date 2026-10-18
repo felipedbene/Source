@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
  * Copyright 2015 Olivier Houchard.
  * All rights reserved.
  *
