@@ -6262,6 +6262,49 @@ lkpi_hw_crypto_tailroom(struct lkpi_sta *lsta, struct ieee80211_key *k)
 }
 #endif
 
+#if defined(__HAIKU__)
+/*
+ * Data frames queued per TID for the driver to dequeue.  Far above the
+ * 64-frame BA window plus the driver's TX ring; reached only when the
+ * driver stopped dequeueing.
+ */
+#define	LKPI_TXQ_MAXLEN		1024
+
+/*
+ * A txq hit LKPI_TXQ_MAXLEN, so the driver stopped dequeueing.  Log what
+ * is holding it (at most every 10 s): the flags and depth of each txq of
+ * the sta and the per-AC hw queue state, which a lost wake leaves set.
+ */
+static void
+lkpi_80211_txq_full(struct ieee80211com *ic, struct lkpi_vif *lvif,
+    struct ieee80211_sta *sta)
+{
+	static int last;
+	struct lkpi_txq *ltxq;
+	int tid;
+
+	if (last != 0 && ieee80211_time_before(ticks, last + 10 * hz))
+		return;
+	last = ticks;
+
+	ic_printf(ic, "%s: txq full; hw_queue_stopped %d %d %d %d\n", __func__,
+	    lvif->hw_queue_stopped[0], lvif->hw_queue_stopped[1],
+	    lvif->hw_queue_stopped[2], lvif->hw_queue_stopped[3]);
+	for (tid = 0; tid < nitems(sta->txq); tid++) {
+		if (sta->txq[tid] == NULL)
+			continue;
+		ltxq = TXQ_TO_LTXQ(sta->txq[tid]);
+		if (ltxq->frms_enqueued == 0)
+			continue;
+		/* Haiku's kernel printf has no 'j' length modifier. */
+		ic_printf(ic, "  tid %d ac %d flags %#x qlen %u enq %llu deq %llu\n",
+		    tid, ltxq->txq.ac, ltxq->flags, skb_queue_len(&ltxq->skbq),
+		    (unsigned long long)ltxq->frms_enqueued,
+		    (unsigned long long)ltxq->frms_dequeued);
+	}
+}
+#endif
+
 static void
 lkpi_80211_txq_tx_one(struct lkpi_sta *lsta, struct mbuf *m)
 {
@@ -6490,6 +6533,29 @@ lkpi_80211_txq_tx_one(struct lkpi_sta *lsta, struct mbuf *m)
 	    "ltxq %p != NULL\n", __func__, lsta, sta, m, skb, ltxq));
 
 	LKPI_80211_LTXQ_LOCK(ltxq);
+#if defined(__HAIKU__)
+	/*
+	 * Nothing else bounds ltxq->skbq: when the driver stops dequeueing
+	 * (TID stopped for an ADDBA exchange, hw queue stopped) the whole
+	 * offered load piles up here, each frame holding an mbuf, an skb copy
+	 * and a node reference.  Drop data frames beyond LKPI_TXQ_MAXLEN, but
+	 * never EAPOL or the management txq: losing those costs the
+	 * association.
+	 */
+	if (skb_queue_len(&ltxq->skbq) >= LKPI_TXQ_MAXLEN &&
+	    ltxq->txq.tid != IEEE80211_NUM_TIDS &&
+	    (m->m_flags & M_EAPOL) == 0) {
+		struct ieee80211vap *vap;
+
+		vap = ni->ni_vap;
+		LKPI_80211_LTXQ_UNLOCK(ltxq);
+		lkpi_80211_txq_full(ic, lvif, sta);
+		if_inc_counter(vap->iv_ifp, IFCOUNTER_OQDROPS, 1);
+		/* Frees the mbuf and releases the reference on the ni. */
+		dev_kfree_skb(skb);
+		return;
+	}
+#endif
 	skb_queue_tail(&ltxq->skbq, skb);
 	ltxq->frms_enqueued++;
 #ifdef LINUXKPI_DEBUG_80211
