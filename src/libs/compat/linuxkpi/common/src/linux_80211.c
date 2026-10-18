@@ -732,6 +732,30 @@ lkpi_sta_sync_ht_from_ni(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	band = vif->bss_conf.chanctx_conf->def.chan->band;
 	ht_cap = &hw->wiphy->bands[band]->ht_cap;
 	sta_ht_cap = &sta->deflink.ht_cap;
+
+#if defined(__HAIKU__)
+	/*
+	 * As mac80211's ieee80211_ht_cap_ie_to_sta_ht_cap(): the peer's LDPC,
+	 * SGI, 40 MHz, greenfield and DSSS/CCK-40 bits only apply if we have
+	 * them too, and its RX/TX STBC pair with our TX/RX STBC. Drivers read
+	 * sta->deflink.ht_cap as "what we may send": unmasked, rtw88 on the
+	 * 1T RTL8821C (no LDPC, no TX STBC) sent LDPC+STBC frames the AP could
+	 * not decode and fell back to 6 Mbit/s on every frame.
+	 */
+	{
+		uint16_t cap = le16toh(htcap->cap_info);
+
+		cap &= ht_cap->cap | ~(IEEE80211_HT_CAP_LDPC_CODING |
+		    IEEE80211_HT_CAP_SUP_WIDTH_20_40 | IEEE80211_HT_CAP_GRN_FLD |
+		    IEEE80211_HT_CAP_SGI_20 | IEEE80211_HT_CAP_SGI_40 |
+		    IEEE80211_HT_CAP_DSSSCCK40);
+		if ((ht_cap->cap & IEEE80211_HT_CAP_TX_STBC) == 0)
+			cap &= ~IEEE80211_HT_CAP_RX_STBC;
+		if ((ht_cap->cap & IEEE80211_HT_CAP_RX_STBC) == 0)
+			cap &= ~IEEE80211_HT_CAP_TX_STBC;
+		sta_ht_cap->cap = cap;
+	}
+#endif
 	rx_nss = 0;
 	for (i = 0; i < 4; i++) {
 		TRACE_RATES("HT rx_mask[%d] sta %#04x & hw %#04x", i,
