@@ -346,6 +346,10 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 	bool				update_wme;
 	bool				rxq_stopped;
 	bool				emulate_chanctx;
+#if defined(__HAIKU__)
+	/* Driver refused hw_scan offload ("return 1"); stay on sw scan. */
+	bool				hw_scan_refused;
+#endif
 
 	/* Must be last! */
 	struct ieee80211_hw		hw __aligned(CACHE_LINE_SIZE);

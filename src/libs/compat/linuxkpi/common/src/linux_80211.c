@@ -5045,6 +5045,15 @@ static void
 lkpi_enable_hw_scan(struct lkpi_hw *lhw)
 {
 
+#if defined(__HAIKU__)
+	/*
+	 * Re-enabling after a refusal makes every scan request fail the same
+	 * way: net80211 sees it cancelled with an empty result while the sw
+	 * fallback runs detached from it, so callers never get a scan list.
+	 */
+	if (lhw->hw_scan_refused)
+		return;
+#endif
 	if (lhw->ops->hw_scan) {
 		/*
 		 * Advertise full-offload scanning.
@@ -5524,6 +5533,11 @@ lkpi_ic_scan_start(struct ieee80211com *ic)
 			 * not possible.  Fall back to sw scan in that case.
 			 */
 			if (error == 1) {
+#if defined(__HAIKU__)
+				LKPI_80211_LHW_SCAN_LOCK(lhw);
+				lhw->hw_scan_refused = true;
+				LKPI_80211_LHW_SCAN_UNLOCK(lhw);
+#endif
 				/*
 				 * We need to put this into some defered context
 				 * the net80211 scan may not be done yet
