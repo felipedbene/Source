@@ -6777,7 +6777,14 @@ lkpi_ic_addba_request(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap,
 		ltxq = TXQ_TO_LTXQ(sta->txq[tap->txa_tid]);
 		TRACEOK("ADDBA REQ ltxq tid %u flags %b qlen %d", tap->txa_tid,
 		    ltxq->flags, LKPI_TXQ_FLAGS_BITS, skb_queue_len(&ltxq->skbq));
+#if defined(__HAIKU__)
+		/* See linuxkpi_ieee80211_tx_dequeue(). */
+		LKPI_80211_LTXQ_LOCK(ltxq);
 		ltxq->flags |= LKPI_TXQ_STOPPED_BA;
+		LKPI_80211_LTXQ_UNLOCK(ltxq);
+#else
+		ltxq->flags |= LKPI_TXQ_STOPPED_BA;
+#endif
 	}
 
 	return (lhw->ic_addba_request(ni, tap, dialogtoken, baparamset, batimeout));
@@ -6865,7 +6872,14 @@ lkpi_ic_addba_response(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap
 		ltxq = TXQ_TO_LTXQ(sta->txq[tap->txa_tid]);
 		TRACEOK("ADDBA RESP ltxq tid %u flags %b qlen %d", tap->txa_tid,
 		    ltxq->flags, LKPI_TXQ_FLAGS_BITS, skb_queue_len(&ltxq->skbq));
+#if defined(__HAIKU__)
+		/* See linuxkpi_ieee80211_tx_dequeue(). */
+		LKPI_80211_LTXQ_LOCK(ltxq);
 		ltxq->flags &= ~LKPI_TXQ_STOPPED_BA;
+		LKPI_80211_LTXQ_UNLOCK(ltxq);
+#else
+		ltxq->flags &= ~LKPI_TXQ_STOPPED_BA;
+#endif
 
 		lkpi_80211_mo_wake_tx_queue(hw, sta->txq[tap->txa_tid], true);
 	}
@@ -6987,7 +7001,14 @@ lkpi_ic_addba_response_timeout(struct ieee80211_node *ni, struct ieee80211_tx_am
 		TRACEOK("ADDBA RESP TIMEO ltxq tid %u flags %b qlen %d",
 		    tap->txa_tid, ltxq->flags, LKPI_TXQ_FLAGS_BITS,
 		    skb_queue_len(&ltxq->skbq));
+#if defined(__HAIKU__)
+		/* See linuxkpi_ieee80211_tx_dequeue(). */
+		LKPI_80211_LTXQ_LOCK(ltxq);
 		ltxq->flags &= ~LKPI_TXQ_STOPPED_BA;
+		LKPI_80211_LTXQ_UNLOCK(ltxq);
+#else
+		ltxq->flags &= ~LKPI_TXQ_STOPPED_BA;
+#endif
 
 		hw = LHW_TO_HW(lhw);
 		lkpi_80211_mo_wake_tx_queue(hw, sta->txq[tap->txa_tid], true);
@@ -9523,6 +9544,17 @@ linuxkpi_ieee80211_tx_dequeue(struct ieee80211_hw *hw,
 	IMPROVE("wiphy_lock? or assert?");
 	skb = NULL;
 	ltxq = TXQ_TO_LTXQ(txq);
+#if defined(__HAIKU__)
+	/*
+	 * ltxq->flags is also changed by the ADDBA paths and the queue wake;
+	 * an unlocked read-modify-write here could undo their clear and
+	 * leave the txq stopped with nobody left to wake it.  Doing the
+	 * hw_queue_stopped check and the STOPPED set under the lock the wake
+	 * path clears STOPPED under also closes the window in which a wake
+	 * would skip a txq just being marked.
+	 */
+	LKPI_80211_LTXQ_LOCK(ltxq);
+#endif
 	ltxq->flags |= LKPI_TXQ_SEEN_DEQUEUE;
 
 	if ((ltxq->flags & (LKPI_TXQ_STOPPED|LKPI_TXQ_STOPPED_BA)) != 0)
@@ -9536,13 +9568,20 @@ linuxkpi_ieee80211_tx_dequeue(struct ieee80211_hw *hw,
 
 	IMPROVE("hw(TX_FRAG_LIST)");
 
+#if !defined(__HAIKU__)
 	LKPI_80211_LTXQ_LOCK(ltxq);
+#endif
 	skb = skb_dequeue(&ltxq->skbq);
 	if (skb != NULL)
 		ltxq->frms_dequeued++;
+#if !defined(__HAIKU__)
 	LKPI_80211_LTXQ_UNLOCK(ltxq);
+#endif
 
 stopped:
+#if defined(__HAIKU__)
+	LKPI_80211_LTXQ_UNLOCK(ltxq);
+#endif
 	return (skb);
 }
 
@@ -10041,10 +10080,25 @@ lkpi_ieee80211_wake_queues(struct ieee80211_hw *hw, int hwq)
 							continue;
 
 						ltxq = TXQ_TO_LTXQ(sta->txq[tid]);
+#if defined(__HAIKU__)
+						/*
+						 * See linuxkpi_ieee80211_tx_dequeue().
+						 * Unlock before waking: drivers may
+						 * dequeue from the wake call.
+						 */
+						LKPI_80211_LTXQ_LOCK(ltxq);
+						if ((ltxq->flags & LKPI_TXQ_STOPPED) == 0) {
+							LKPI_80211_LTXQ_UNLOCK(ltxq);
+							continue;
+						}
+						ltxq->flags &= ~LKPI_TXQ_STOPPED;
+						LKPI_80211_LTXQ_UNLOCK(ltxq);
+#else
 						if ((ltxq->flags & LKPI_TXQ_STOPPED) == 0)
 							continue;
 
 						ltxq->flags &= ~LKPI_TXQ_STOPPED;
+#endif
 
 						if (!skb_queue_empty(&ltxq->skbq))
 							lkpi_80211_mo_wake_tx_queue(hw, sta->txq[tid], false);
