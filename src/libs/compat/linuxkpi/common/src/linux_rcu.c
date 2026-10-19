@@ -44,6 +44,10 @@
 #include <sys/taskqueue.h>
 #include <sys/kdb.h>
 
+#if defined(__HAIKU__)
+#include <KernelExport.h>
+#endif
+
 #include <ck_epoch.h>
 
 #include <linux/rcupdate.h>
@@ -116,6 +120,24 @@ DPCPU_DEFINE_STATIC(struct linux_epoch_record, linux_epoch_record[RCU_TYPE_MAX])
 
 static void linux_rcu_cleaner_func(void *, int);
 
+#if defined(__HAIKU__)
+/*
+ * On Haiku critical_enter() only pins the thread to its CPU; it does not
+ * keep another thread on that CPU from preempting it. The epoch record and
+ * its reader list are updated with plain read-modify-writes, so a reader
+ * preempting another on the same CPU can lose an update and leave the
+ * record active with no reader in it, after which synchronize_rcu() never
+ * returns. Disable interrupts around those updates instead. Nothing inside
+ * may block or use curthread, which with interrupts disabled may be a
+ * per-CPU fallback shared by all threads on that CPU.
+ */
+#define	linux_rcu_record_enter(st)	((st) = disable_interrupts())
+#define	linux_rcu_record_exit(st)	restore_interrupts(st)
+#else
+#define	linux_rcu_record_enter(st)	critical_enter()
+#define	linux_rcu_record_exit(st)	critical_exit()
+#endif
+
 static void
 linux_rcu_runtime_init(void *arg __unused)
 {
@@ -184,6 +206,9 @@ linux_rcu_read_lock(unsigned type)
 {
 	struct linux_epoch_record *record;
 	struct task_struct *ts;
+#if defined(__HAIKU__)
+	cpu_status st;
+#endif
 
 	MPASS(type < RCU_TYPE_MAX);
 
@@ -210,11 +235,11 @@ linux_rcu_read_lock(unsigned type)
 	 * Use a critical section to prevent recursion inside
 	 * ck_epoch_begin(). Else this function supports recursion.
 	 */
-	critical_enter();
+	linux_rcu_record_enter(st);
 	ck_epoch_begin(&record->epoch_record,
 	    (ck_epoch_section_t *)&ts->rcu_section[type]);
 	TAILQ_INSERT_TAIL(&record->ts_head, ts, rcu_entry[type]);
-	critical_exit();
+	linux_rcu_record_exit(st);
 }
 
 void
@@ -222,6 +247,9 @@ linux_rcu_read_unlock(unsigned type)
 {
 	struct linux_epoch_record *record;
 	struct task_struct *ts;
+#if defined(__HAIKU__)
+	cpu_status st;
+#endif
 
 	MPASS(type < RCU_TYPE_MAX);
 
@@ -242,11 +270,11 @@ linux_rcu_read_unlock(unsigned type)
 	 * Use a critical section to prevent recursion inside
 	 * ck_epoch_end(). Else this function supports recursion.
 	 */
-	critical_enter();
+	linux_rcu_record_enter(st);
 	ck_epoch_end(&record->epoch_record,
 	    (ck_epoch_section_t *)&ts->rcu_section[type]);
 	TAILQ_REMOVE(&record->ts_head, ts, rcu_entry[type]);
-	critical_exit();
+	linux_rcu_record_exit(st);
 
 	sched_unpin();
 }
@@ -290,6 +318,9 @@ linux_synchronize_rcu_cb(ck_epoch_t *epoch __unused, ck_epoch_record_t *epoch_re
 	if (record->cpuid == PCPU_GET(cpuid)) {
 		bool is_sleeping = 0;
 		u_char prio = 0;
+#if defined(__HAIKU__)
+		cpu_status st;
+#endif
 
 		/*
 		 * Find the lowest priority or sleeping thread which
@@ -297,11 +328,25 @@ linux_synchronize_rcu_cb(ck_epoch_t *epoch __unused, ck_epoch_record_t *epoch_re
 		 * the threads in the queue are CPU-pinned and cannot
 		 * go anywhere while the current thread is locked.
 		 */
+#if defined(__HAIKU__)
+		/*
+		 * Here the thread lock does not keep readers from changing
+		 * the list, and this thread is not bound to the record's CPU:
+		 * walk it with interrupts disabled, and only while still on
+		 * that CPU.
+		 */
+		st = disable_interrupts();
+		if (record->cpuid == PCPU_GET(cpuid)) {
+#endif
 		TAILQ_FOREACH(ts, &record->ts_head, rcu_entry[record->type]) {
 			if (ts->task_thread->td_priority > prio)
 				prio = ts->task_thread->td_priority;
 			is_sleeping |= (ts->task_thread->td_inhibitors != 0);
 		}
+#if defined(__HAIKU__)
+		}
+		restore_interrupts(st);
+#endif
 
 		if (is_sleeping) {
 			thread_unlock(td);
