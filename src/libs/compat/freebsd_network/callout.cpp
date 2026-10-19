@@ -220,7 +220,10 @@ _callout_stop(struct callout *c, bool drain, bool locked = false)
 			c->c_due = -1;
 			ret = 1;
 		}
-		if (drain) {
+		if (drain && find_thread(NULL) != sThread) {
+			// Draining from within its own callback (e.g. one that drops
+			// the last reference to the object holding the callout) must
+			// not wait for itself.
 			locker.Unlock();
 			while (callout_active(c))
 				snooze(100);
