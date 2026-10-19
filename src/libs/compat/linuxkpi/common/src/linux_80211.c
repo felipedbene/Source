@@ -6115,6 +6115,20 @@ lkpi_ic_node_free(struct ieee80211_node *ni)
 
 	/* KASSERT lsta is not NULL here. Print ni/ni__refcnt. */
 
+#if defined(__HAIKU__)
+	/*
+	 * net80211 stops the ADDBA/BAR timers only for nodes still marked
+	 * HT, and the timeout handler uses the lsta: drain them before
+	 * either goes away.
+	 */
+	{
+		int tid;
+
+		for (tid = 0; tid < WME_NUM_TID; tid++)
+			callout_drain(&ni->ni_tx_ampdu[tid].txa_timer);
+	}
+#endif
+
 	/*
 	 * Pass in the original ni just in case of error we could check that
 	 * it is the same as lsta->ni.
@@ -7378,6 +7392,17 @@ linuxkpi_ieee80211_start_tx_ba_session(struct ieee80211_sta *sta, uint8_t tid,
 		    "supported\n", __func__);
 		return (-EINVAL);
 	}
+#if defined(__HAIKU__)
+	/*
+	 * After ieee80211_sta_leave() the node's HT state is cleaned up but
+	 * the node lives on until its last reference is gone.  A session
+	 * requested now would arm tap->txa_timer, and node cleanup at free
+	 * skips nodes without IEEE80211_NODE_HT: the callout would be freed
+	 * while still scheduled.
+	 */
+	if ((lsta->ni->ni_flags & IEEE80211_NODE_HT) == 0)
+		return (-EBUSY);
+#endif
 
 #ifdef __notyet__
 	/*
