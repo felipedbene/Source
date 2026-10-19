@@ -4713,23 +4713,23 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	    ieee80211_media_status, mac);
 
 #ifdef LKPI_80211_HT
-#if !defined(__HAIKU__)
 	/*
 	 * Modern chipset/fw/drv will do A-MPDU in drv/fw and fail
 	 * to do so if they cannot do the crypto too.
-	 *
-	 * On Haiku we keep IEEE80211_FHT_AMPDU_RX: without it every
-	 * ADDBA request from the AP is rejected and the downlink never
-	 * aggregates.  Drivers like rtw88 block-ack in hardware and
-	 * leave reordering to net80211 (which also does the software
-	 * crypto replay check after reordering), so RX A-MPDU works
-	 * without hardware crypto there.  Firmware-offload drivers that
-	 * genuinely cannot aggregate around software crypto are not
-	 * ported here yet; revisit the gate when one is.
 	 */
+#if defined(__HAIKU__)
+	/*
+	 * Drivers that leave reordering to the stack (e.g. rtw88) block-ack
+	 * in hardware and get net80211's reorder buffer, which runs before
+	 * the software crypto replay check; without IEEE80211_FHT_AMPDU_RX
+	 * every ADDBA request is rejected and the downlink never aggregates.
+	 */
+	if (!lkpi_hwcrypto && IEEE80211_CONF_AMPDU_OFFLOAD(ic) &&
+	    ieee80211_hw_check(hw, SUPPORTS_REORDERING_BUFFER))
+#else
 	if (!lkpi_hwcrypto && IEEE80211_CONF_AMPDU_OFFLOAD(ic))
-		vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_RX;
 #endif
+		vap->iv_flags_ht &= ~IEEE80211_FHT_AMPDU_RX;
 #endif
 
 	if (hw->max_listen_interval == 0)
@@ -9159,8 +9159,10 @@ skip_device_ts:
 	 * tag individual A-MPDUs, so mark all QoS data from HT stations
 	 * the way native net80211 drivers do; the reorder buffer passes
 	 * frames of TIDs without a block ack agreement straight through.
+	 * Drivers with SUPPORTS_REORDERING_BUFFER reorder themselves.
 	 */
 	if (ni != NULL && (ni->ni_flags & IEEE80211_NODE_HT) != 0 &&
+	    !ieee80211_hw_check(hw, SUPPORTS_REORDERING_BUFFER) &&
 	    m->m_pkthdr.len >= sizeof(struct ieee80211_qosframe)) {
 		struct ieee80211_qosframe *qwh;
 
