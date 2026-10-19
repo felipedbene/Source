@@ -243,6 +243,10 @@ ieee80211_crypto_vattach(struct ieee80211vap *vap)
 	vap->iv_key_delete = null_key_delete;
 	vap->iv_key_update_begin = null_key_update;
 	vap->iv_key_update_end = null_key_update;
+#if defined(__HAIKU__)
+	mtx_init(&vap->iv_swkey_mtx, "80211 swkey", NULL, MTX_DEF);
+	vap->iv_swkey_sync = 0;
+#endif
 }
 
 /*
@@ -252,7 +256,66 @@ void
 ieee80211_crypto_vdetach(struct ieee80211vap *vap)
 {
 	ieee80211_crypto_delglobalkeys(vap);
+#if defined(__HAIKU__)
+	/*
+	 * ieee80211_node_vdetach() still deletes unicast keys after this;
+	 * the traffic paths are stopped by now, so let those run unlocked.
+	 * Turning the lock off while holding it keeps lock/unlock paired.
+	 */
+	if (vap->iv_swkey_sync) {
+		mtx_lock(&vap->iv_swkey_mtx);
+		vap->iv_swkey_sync = 0;
+		mtx_unlock(&vap->iv_swkey_mtx);
+	}
+	mtx_destroy(&vap->iv_swkey_mtx);
+#endif
 }
+
+#if defined(__HAIKU__)
+/*
+ * Serialize key updates against the software cipher methods.
+ *
+ * Without this ieee80211_crypto_decap() and friends can run while
+ * ieee80211_crypto_delkey() frees the cipher context they use, or see
+ * a key ieee80211_crypto_newkey() published but ieee80211_crypto_setkey()
+ * has not keyed yet.  Once enabled, iv_swkey_mtx is held across every
+ * ieee80211_key_update_begin()/ieee80211_key_update_end() block and
+ * around each cipher method call on the traffic paths.
+ *
+ * The lock is innermost: key update blocks may be entered with the
+ * node table lock and the com lock held, and nothing acquires another
+ * lock or waits while holding iv_swkey_mtx.  This only holds while the
+ * driver key methods (iv_key_alloc/set/delete) do not sleep or lock,
+ * so only drivers that leave those at the null methods (software
+ * crypto) may enable it, before the vap carries any traffic or keys.
+ */
+void
+ieee80211_crypto_swkey_sync(struct ieee80211vap *vap)
+{
+
+	KASSERT(vap->iv_key_alloc == null_key_alloc &&
+	    vap->iv_key_set == null_key_set &&
+	    vap->iv_key_delete == null_key_delete,
+	    ("%s: driver key methods", __func__));
+	vap->iv_swkey_sync = 1;
+}
+
+void
+ieee80211_crypto_swkey_lock(struct ieee80211vap *vap)
+{
+
+	if (vap->iv_swkey_sync)
+		mtx_lock(&vap->iv_swkey_mtx);
+}
+
+void
+ieee80211_crypto_swkey_unlock(struct ieee80211vap *vap)
+{
+
+	if (vap->iv_swkey_sync)
+		mtx_unlock(&vap->iv_swkey_mtx);
+}
+#endif
 
 /*
  * Register a crypto cipher module.
@@ -685,12 +748,23 @@ ieee80211_crypto_encap(struct ieee80211_node *ni, struct mbuf *m)
 	struct ieee80211_key *k;
 	const struct ieee80211_cipher *cip;
 
+#if defined(__HAIKU__)
+	ieee80211_crypto_swkey_lock(ni->ni_vap);
+	if ((k = ieee80211_crypto_get_txkey(ni, m)) != NULL) {
+		cip = k->wk_cipher;
+		if (!cip->ic_encap(k, m))
+			k = NULL;
+	}
+	ieee80211_crypto_swkey_unlock(ni->ni_vap);
+	return (k);
+#else
 	if ((k = ieee80211_crypto_get_txkey(ni, m)) != NULL) {
 		cip = k->wk_cipher;
 		return (cip->ic_encap(k, m) ? k : NULL);
 	}
 
 	return NULL;
+#endif
 }
 
 /*
@@ -750,6 +824,9 @@ ieee80211_crypto_decap(struct ieee80211_node *ni, struct mbuf *m, int hdrlen,
 	 */
 	wh = mtod(m, struct ieee80211_frame *);
 	m_copydata(m, hdrlen + IEEE80211_WEP_IVLEN, sizeof(keyid), &keyid);
+#if defined(__HAIKU__)
+	ieee80211_crypto_swkey_lock(vap);
+#endif
 	if (IEEE80211_IS_MULTICAST(wh->i_addr1) ||
 	    IEEE80211_KEY_UNDEFINED(&ni->ni_ucastkey))
 		k = &vap->iv_nw_keys[keyid >> 6];
@@ -766,6 +843,9 @@ ieee80211_crypto_decap(struct ieee80211_node *ni, struct mbuf *m, int hdrlen,
 		    "frame is too short (%d < %u) for crypto decap",
 		    cip->ic_name, m->m_len, hdrlen + cip->ic_header);
 		vap->iv_stats.is_rx_tooshort++;
+#if defined(__HAIKU__)
+		ieee80211_crypto_swkey_unlock(vap);
+#endif
 		*key = NULL;
 		return (0);
 	}
@@ -777,11 +857,17 @@ ieee80211_crypto_decap(struct ieee80211_node *ni, struct mbuf *m, int hdrlen,
 	 * and an error.
 	 */
 	if (cip->ic_decap(k, m, hdrlen)) {
+#if defined(__HAIKU__)
+		ieee80211_crypto_swkey_unlock(vap);
+#endif
 		/* success */
 		*key = k;
 		return (1);
 	}
 
+#if defined(__HAIKU__)
+	ieee80211_crypto_swkey_unlock(vap);
+#endif
 	/* Failure */
 	*key = NULL;
 	return (0);
@@ -854,8 +940,20 @@ ieee80211_crypto_demic(struct ieee80211vap *vap, struct ieee80211_key *k,
 	if (k == NULL)
 		return (1);
 
+#if defined(__HAIKU__)
+	{
+		int ret;
+
+		ieee80211_crypto_swkey_lock(vap);
+		cip = k->wk_cipher;
+		ret = (cip->ic_miclen > 0 ? cip->ic_demic(k, m, force) : 1);
+		ieee80211_crypto_swkey_unlock(vap);
+		return (ret);
+	}
+#else
 	cip = k->wk_cipher;
 	return (cip->ic_miclen > 0 ? cip->ic_demic(k, m, force) : 1);
+#endif
 }
 
 static void

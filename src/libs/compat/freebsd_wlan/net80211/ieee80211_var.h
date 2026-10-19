@@ -525,6 +525,14 @@ struct ieee80211vap {
 	void			(*iv_key_update_end)(struct ieee80211vap *);
 	void			(*iv_update_deftxkey)(struct ieee80211vap *,
 				    ieee80211_keyix deftxkey);
+#if defined(__HAIKU__)
+	/*
+	 * Held across a key update block and around each software
+	 * cipher call; see ieee80211_crypto_swkey_sync().
+	 */
+	struct mtx		iv_swkey_mtx;
+	int			iv_swkey_sync;	/* iv_swkey_mtx is in use */
+#endif
 
 	const struct ieee80211_authenticator *iv_auth; /* authenticator glue */
 	void			*iv_ec;		/* private auth state */
@@ -908,10 +916,16 @@ static __inline void
 ieee80211_key_update_begin(struct ieee80211vap *vap)
 {
 	vap->iv_key_update_begin(vap);
+#if defined(__HAIKU__)
+	ieee80211_crypto_swkey_lock(vap);
+#endif
 }
 static __inline void
 ieee80211_key_update_end(struct ieee80211vap *vap)
 {
+#if defined(__HAIKU__)
+	ieee80211_crypto_swkey_unlock(vap);
+#endif
 	vap->iv_key_update_end(vap);
 }
 

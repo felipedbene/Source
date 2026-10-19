@@ -4682,6 +4682,19 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	}
 #endif
 
+#if defined(__HAIKU__)
+	/*
+	 * Without the key methods above every key is a net80211 software
+	 * key.  The rxq and txq tasks run its ciphers while the key ioctls
+	 * (wpa_supplicant) and the state machine (ieee80211_sta_leave() on
+	 * ic_tq) attach, key and free them; have net80211 serialize the two.
+	 */
+#ifdef LKPI_80211_HW_CRYPTO
+	if (vap->iv_key_update_begin != lkpi_iv_key_update_begin)
+#endif
+		ieee80211_crypto_swkey_sync(vap);
+#endif
+
 #ifdef LKPI_80211_HT
 	/* Stay with the iv_ampdu_rxmax,limit / iv_ampdu_density defaults until later. */
 #if defined(__HAIKU__)

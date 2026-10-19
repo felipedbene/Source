@@ -197,6 +197,11 @@ void	ieee80211_crypto_delglobalkeys(struct ieee80211vap *);
 void	ieee80211_crypto_reload_keys(struct ieee80211com *);
 void	ieee80211_crypto_set_deftxkey(struct ieee80211vap *,
 	    ieee80211_keyix kid);
+#if defined(__HAIKU__)
+void	ieee80211_crypto_swkey_sync(struct ieee80211vap *);
+void	ieee80211_crypto_swkey_lock(struct ieee80211vap *);
+void	ieee80211_crypto_swkey_unlock(struct ieee80211vap *);
+#endif
 
 /*
  * Template for a supported cipher.  Ciphers register with the
@@ -268,8 +273,19 @@ static __inline int
 ieee80211_crypto_enmic(struct ieee80211vap *vap,
 	struct ieee80211_key *k, struct mbuf *m, int force)
 {
+#if defined(__HAIKU__)
+	const struct ieee80211_cipher *cip;
+	int ret;
+
+	ieee80211_crypto_swkey_lock(vap);
+	cip = k->wk_cipher;
+	ret = (cip->ic_miclen > 0 ? cip->ic_enmic(k, m, force) : 1);
+	ieee80211_crypto_swkey_unlock(vap);
+	return (ret);
+#else
 	const struct ieee80211_cipher *cip = k->wk_cipher;
 	return (cip->ic_miclen > 0 ? cip->ic_enmic(k, m, force) : 1);
+#endif
 }
 
 /* 
