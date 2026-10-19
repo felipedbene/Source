@@ -565,6 +565,12 @@ ccmp_encrypt(struct ieee80211_key *key, struct mbuf *m0, int hdrlen)
 		e[AES_BLOCK_LEN], s0[AES_BLOCK_LEN];
 	uint8_t *pos;
 
+#if defined(__HAIKU__)
+	/* See ccmp_decrypt(). */
+	if (ctx->cc_aes.Nr == 0)
+		return 0;
+#endif
+
 	ctx->cc_vap->iv_stats.is_crypto_ccmp++;
 
 	wh = mtod(m, struct ieee80211_frame *);
@@ -717,6 +723,19 @@ ccmp_decrypt(struct ieee80211_key *key, u_int64_t pn, struct mbuf *m, int hdrlen
 	rxs = ieee80211_get_rx_params_ptr(m);
 	if ((rxs != NULL) && (rxs->c_pktflags & IEEE80211_RX_F_DECRYPTED) != 0)
 		return (1);
+
+#if defined(__HAIKU__)
+	/*
+	 * The context is still unkeyed if ccmp_setkey() rejected the key
+	 * after ieee80211_crypto_newkey() attached it (the key ioctl leaves
+	 * the key in place then), or, for drivers that do not enable
+	 * ieee80211_crypto_swkey_sync(), while a key update is under way.
+	 * With Nr 0 rijndaelEncrypt() never ends its round loop and walks
+	 * the round key pointer off the end of the context.
+	 */
+	if (ctx->cc_aes.Nr == 0)
+		return 0;
+#endif
 
 	ctx->cc_vap->iv_stats.is_crypto_ccmp++;
 
