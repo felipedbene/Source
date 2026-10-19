@@ -205,6 +205,29 @@ wlan_open(void* cookie)
 	ifp->if_flags |= IFF_UP;
 	ifp->if_ioctl(ifp, SIOCSIFFLAGS, NULL);
 
+	struct ieee80211vap* vap = (struct ieee80211vap*)ifp->if_softc;
+	if (vap->iv_opmode == IEEE80211_M_STA) {
+		// With manual roaming (the Haiku default) net80211 stays in INIT
+		// until someone requests a scan.  Nothing in userland does at
+		// boot: net_server's auto-join waits for the scan-done event of
+		// a scan it never starts.  File one scan-only request, exactly
+		// like the IEEE80211_IOC_SCAN_REQ ioctl does from INIT; the
+		// results then drive net_server's join.
+		IEEE80211_LOCK(vap->iv_ic);
+		if (vap->iv_state == IEEE80211_S_INIT) {
+			vap->iv_scanreq_flags = IEEE80211_IOC_SCAN_ACTIVE
+				| IEEE80211_IOC_SCAN_NOPICK | IEEE80211_IOC_SCAN_ONCE;
+			vap->iv_scanreq_duration = IEEE80211_SCAN_FOREVER;
+			vap->iv_scanreq_mindwell = 0;
+			vap->iv_scanreq_maxdwell = 0;
+			vap->iv_scanreq_nssid = 0;
+			vap->iv_flags_ext |= IEEE80211_FEXT_SCANREQ;
+			IEEE80211_UNLOCK(vap->iv_ic);
+			ieee80211_new_state(vap, IEEE80211_S_SCAN, 0);
+		} else
+			IEEE80211_UNLOCK(vap->iv_ic);
+	}
+
 	return B_OK;
 }
 

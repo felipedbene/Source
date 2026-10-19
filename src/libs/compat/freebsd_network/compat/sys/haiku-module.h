@@ -94,6 +94,7 @@ void uninit_wlan_stack(void);
 status_t start_wlan(device_t);
 status_t stop_wlan(device_t);
 status_t wlan_control(void*, uint32, void*, size_t);
+status_t wlan_open(void*);
 status_t wlan_close(void*);
 
 /* we define the driver methods with HAIKU_FBSD_DRIVERS_GLUE to
@@ -135,6 +136,8 @@ status_t wlan_close(void*);
 	status_t wlan_control(void *cookie, uint32 op, void *arg, 			\
 		size_t length)													\
 		{ return B_BAD_VALUE; }											\
+	status_t wlan_open(void* cookie)									\
+		{ return B_OK; }												\
 	status_t wlan_close(void* cookie)									\
 		{ return B_OK; }
 

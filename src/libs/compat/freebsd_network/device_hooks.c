@@ -70,6 +70,12 @@ compat_open(const char *name, uint32 flags, void **cookie)
 
 	IFF_UNLOCKGIANT(ifp);
 
+	/* As compat_close() calls wlan_close(): let the wlan glue bring the
+	 * vap up (it also kicks the initial scan net_server's auto-join
+	 * waits for). */
+	if (HAIKU_DRIVER_REQUIRES(FBSD_WLAN_FEATURE))
+		wlan_open(ifp);
+
 	*cookie = ifp;
 	return B_OK;
 }
