@@ -6566,7 +6566,24 @@ lkpi_80211_txq_tx_one(struct lkpi_sta *lsta, struct mbuf *m)
 	skb_set_queue_mapping(skb, ac);
 
 	info = IEEE80211_SKB_CB(skb);
+#if defined(__HAIKU__)
+	/*
+	 * Ask for a real TX status only where a completion consumer needs the
+	 * outcome: M_TXCB callbacks, EAPOL, management and null frames.
+	 * rtw88 holds each frame that asks, with its mbuf and node reference,
+	 * until a firmware TX report arrives; the firmware does not report
+	 * most data frames, and every enqueue pushes the purge timer back, so
+	 * under load the held frames grow without bound. Other frames are
+	 * completed as ACKed when their DMA is done.
+	 */
+	if ((m->m_flags & (M_TXCB | M_EAPOL)) != 0 ||
+	    !ieee80211_is_data(hdr->frame_control) ||
+	    ieee80211_is_nullfunc(hdr->frame_control) ||
+	    ieee80211_is_qos_nullfunc(hdr->frame_control))
+		info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
+#else
 	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
+#endif
 	/* Slight delay; probably only happens on scanning so fine? */
 	if (c == NULL || c == IEEE80211_CHAN_ANYC)
 		c = ic->ic_curchan;
