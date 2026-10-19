@@ -203,6 +203,9 @@ void	ieee80211_recv_bar(struct ieee80211_node *, struct mbuf *);
 void	ieee80211_ht_node_init(struct ieee80211_node *);
 void	ieee80211_ht_node_cleanup(struct ieee80211_node *);
 void	ieee80211_ht_node_age(struct ieee80211_node *);
+#if defined(__HAIKU__)
+int	ieee80211_ampdu_rx_age(struct ieee80211_node *, int);
+#endif
 
 struct ieee80211_channel *ieee80211_ht_adjust_channel(struct ieee80211com *,
 		struct ieee80211_channel *, int);

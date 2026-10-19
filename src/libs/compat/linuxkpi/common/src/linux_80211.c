@@ -186,6 +186,8 @@ static void lkpi_80211_txq_task(void *, int);
 static void lkpi_80211_lhw_rxq_task(void *, int);
 #if defined(__HAIKU__)
 static void lkpi_80211_txq_wake_task(void *, int);
+static void lkpi_80211_lhw_rxq_pause(struct lkpi_hw *);
+static void lkpi_80211_lhw_rxq_resume(struct lkpi_hw *);
 #endif
 static void lkpi_ieee80211_free_skb_mbuf(void *);
 #ifdef LKPI_80211_WME
@@ -3490,6 +3492,15 @@ lkpi_sta_run_to_assoc(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	lsta->in_mgd = true;
 
 	wiphy_unlock(hw->wiphy);
+#if defined(__HAIKU__)
+	/*
+	 * iv_newstate() (ieee80211_sta_leave()) and the BA stop below free
+	 * the A-MPDU reorder queues, which the rxq task uses unlocked.
+	 * Pausing waits for the task, so neither IEEE80211_LOCK nor the
+	 * wiphy lock may be held here.
+	 */
+	lkpi_80211_lhw_rxq_pause(lhw);
+#endif
 	IEEE80211_LOCK(vap->iv_ic);
 
 	/* Call iv_newstate first so we get potential (RE-)ASSOC/DEAUTH? packet out. */
@@ -3497,6 +3508,9 @@ lkpi_sta_run_to_assoc(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	if (error != 0) {
 		ic_printf(vap->iv_ic, "%s:%d: iv_newstate(%p, %d, %d) "
 		    "failed: %d\n", __func__, __LINE__, vap, nstate, arg, error);
+#if defined(__HAIKU__)
+		lkpi_80211_lhw_rxq_resume(lhw);
+#endif
 		goto outni;
 	}
 
@@ -3511,6 +3525,9 @@ lkpi_sta_run_to_assoc(struct ieee80211vap *vap, enum ieee80211_state nstate, int
 	}
 
 	IEEE80211_UNLOCK(vap->iv_ic);
+#if defined(__HAIKU__)
+	lkpi_80211_lhw_rxq_resume(lhw);
+#endif
 
 	/* Ensure the packets get out. */
 	lkpi_80211_flush_tx(lhw, lsta);
@@ -4787,6 +4804,9 @@ lkpi_80211_lhw_rxq_stop_flush(struct lkpi_hw *lhw)
 	/* Drain taskq, won't be restarted due to rxq_stopped being set. */
 	while (taskqueue_cancel(taskqueue_thread, &lhw->rxq_task, NULL) != 0)
 		taskqueue_drain(taskqueue_thread, &lhw->rxq_task);
+	/* Only the task arms the callout. */
+	callout_drain(&lhw->rxq_reorder_callout);
+	lhw->rxq_reorder_held = false;
 
 	mbufq_init(&mq, IFQ_MAXLEN);
 	LKPI_80211_LHW_RXQ_LOCK(lhw);
@@ -4811,6 +4831,35 @@ lkpi_80211_lhw_rxq_stop_flush(struct lkpi_hw *lhw)
 #endif
 		m_freem(m);
 	}
+}
+
+/*
+ * Keep the deferred RX path from feeding net80211 so the caller can
+ * change node RX state only lkpi_80211_lhw_rxq_task() uses otherwise;
+ * frames keep queueing.  The task takes IEEE80211_LOCK and the wiphy
+ * lock, so neither may be held here.
+ */
+static void
+lkpi_80211_lhw_rxq_pause(struct lkpi_hw *lhw)
+{
+
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	lhw->rxq_paused = true;
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+
+	while (taskqueue_cancel(taskqueue_thread, &lhw->rxq_task, NULL) != 0)
+		taskqueue_drain(taskqueue_thread, &lhw->rxq_task);
+}
+
+static void
+lkpi_80211_lhw_rxq_resume(struct lkpi_hw *lhw)
+{
+
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	lhw->rxq_paused = false;
+	if (!lhw->rxq_stopped)
+		taskqueue_enqueue(taskqueue_thread, &lhw->rxq_task);
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
 }
 #endif
 
@@ -7701,6 +7750,9 @@ linuxkpi_ieee80211_alloc_hw(size_t priv_len, const struct ieee80211_ops *ops)
 	TASK_INIT(&lhw->rxq_task, 0, lkpi_80211_lhw_rxq_task, lhw);
 	mbufq_init(&lhw->rxq, 32 * NAPI_POLL_WEIGHT);
 	lhw->rxq_stopped = false;
+#if defined(__HAIKU__)
+	callout_init(&lhw->rxq_reorder_callout, 1);
+#endif
 
 	/*
 	 * XXX-BZ TODO make sure there is a "_null" function to all ops
@@ -7747,6 +7799,10 @@ linuxkpi_ieee80211_iffree(struct ieee80211_hw *hw)
 	/* Drain taskq, won't be restarted due to rxq_stopped being set. */
 	while (taskqueue_cancel(taskqueue_thread, &lhw->rxq_task, NULL) != 0)
 		taskqueue_drain(taskqueue_thread, &lhw->rxq_task);
+#if defined(__HAIKU__)
+	/* Only the task arms the callout. */
+	callout_drain(&lhw->rxq_reorder_callout);
+#endif
 
 	/* Flush mbufq (make sure to release ni refs!). */
 	m = mbufq_dequeue(&lhw->rxq);
@@ -8461,6 +8517,71 @@ linuxkpi_ieee80211_scan_completed(struct ieee80211_hw *hw,
 	return;
 }
 
+#if defined(__HAIKU__)
+/*
+ * Without BARs (rtw88 does not pass them up) net80211 releases frames
+ * held for a missing MPDU only when a later frame arrives, after
+ * ieee80211_ampdu_age.  Release them after mac80211's reorder timeout
+ * instead, from the rxq task: the reorder queues are unlocked and
+ * only that task may touch them.
+ */
+#define	LKPI_80211_RXA_RELEASE_MS	100
+#define	LKPI_80211_RXA_TIMER_MS		20
+
+static bool
+lkpi_80211_rxa_held(struct ieee80211_node *ni)
+{
+	int tid;
+
+	if ((ni->ni_flags & IEEE80211_NODE_HT) == 0)
+		return (false);
+	for (tid = 0; tid < WME_NUM_TID; tid++) {
+		if (ni->ni_rx_ampdu[tid].rxa_qframes != 0)
+			return (true);
+	}
+	return (false);
+}
+
+static void
+lkpi_80211_rxa_age_node(void *arg, struct ieee80211_node *ni)
+{
+	bool *held;
+
+	held = arg;
+	if (ieee80211_ampdu_rx_age(ni,
+	    msecs_to_ticks(LKPI_80211_RXA_RELEASE_MS)) != 0) {
+		*held = true;
+	}
+}
+
+static void
+lkpi_80211_lhw_rxq_reorder_timeout(void *arg)
+{
+	struct lkpi_hw *lhw;
+
+	lhw = arg;
+	LKPI_80211_LHW_RXQ_LOCK(lhw);
+	if (!lhw->rxq_stopped)
+		taskqueue_enqueue(taskqueue_thread, &lhw->rxq_task);
+	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+}
+
+static void
+lkpi_80211_lhw_rxq_reorder_age(struct lkpi_hw *lhw)
+{
+	bool held;
+
+	held = false;
+	ieee80211_iterate_nodes(&lhw->ic->ic_sta, lkpi_80211_rxa_age_node,
+	    &held);
+	lhw->rxq_reorder_held = held;
+	if (held && !callout_pending(&lhw->rxq_reorder_callout))
+		callout_reset(&lhw->rxq_reorder_callout,
+		    msecs_to_ticks(LKPI_80211_RXA_TIMER_MS),
+		    lkpi_80211_lhw_rxq_reorder_timeout, lhw);
+}
+#endif
+
 static void
 lkpi_80211_lhw_rxq_rx_one(struct lkpi_hw *lhw, struct mbuf *m)
 {
@@ -8487,7 +8608,24 @@ lkpi_80211_lhw_rxq_rx_one(struct lkpi_hw *lhw, struct mbuf *m)
 #endif
 
 	if (ni != NULL) {
+#if defined(__HAIKU__)
+		/*
+		 * The frame was tagged M_AMPDU while the node was an HT
+		 * station; a leave/teardown may have cleared NODE_HT (via
+		 * ieee80211_ht_node_cleanup, serialized against this task by
+		 * the rxq pause) while the frame waited in the rxq.
+		 * net80211's ieee80211_ampdu_reorder() asserts NODE_HT
+		 * ("not an HT sta" panic).
+		 */
+		if ((m->m_flags & M_AMPDU) != 0 &&
+		    (ni->ni_flags & IEEE80211_NODE_HT) == 0)
+			m->m_flags &= ~M_AMPDU;
+#endif
 		ok = ieee80211_input_mimo(ni, m);
+#if defined(__HAIKU__)
+		if (!lhw->rxq_reorder_held && lkpi_80211_rxa_held(ni))
+			lhw->rxq_reorder_held = true;
+#endif
 		ieee80211_free_node(ni);		/* Release the reference. */
 		if (ok < 0)
 			m_freem(m);
@@ -8520,6 +8658,13 @@ lkpi_80211_lhw_rxq_task(void *ctx, int pending)
 	mbufq_init(&mq, IFQ_MAXLEN);
 
 	LKPI_80211_LHW_RXQ_LOCK(lhw);
+#if defined(__HAIKU__)
+	if (lhw->rxq_paused) {
+		/* lkpi_80211_lhw_rxq_resume() requeues us. */
+		LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+		return;
+	}
+#endif
 	mbufq_concat(&mq, &lhw->rxq);
 	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
 
@@ -8528,6 +8673,11 @@ lkpi_80211_lhw_rxq_task(void *ctx, int pending)
 		lkpi_80211_lhw_rxq_rx_one(lhw, m);
 		m = mbufq_dequeue(&mq);
 	}
+
+#if defined(__HAIKU__)
+	if (lhw->rxq_reorder_held)
+		lkpi_80211_lhw_rxq_reorder_age(lhw);
+#endif
 }
 
 static void

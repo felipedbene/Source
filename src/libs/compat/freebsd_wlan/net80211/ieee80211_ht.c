@@ -1022,7 +1022,18 @@ ieee80211_ampdu_reorder(struct ieee80211_node *ni, struct mbuf *m,
 
 	KASSERT((m->m_flags & (M_AMPDU | M_AMPDU_MPDU)) == M_AMPDU,
 	    ("!a-mpdu or already re-ordered, flags 0x%x", m->m_flags));
+#if defined(__HAIKU__)
+	/*
+	 * A frame tagged M_AMPDU on reception can be delivered after a
+	 * leave/roam cleared the node's HT state (ieee80211_sta_join1's
+	 * sta_leave of the old bss runs outside the lkpi rxq pause).
+	 * Not an HT sta (any more): nothing to reorder.
+	 */
+	if ((ni->ni_flags & IEEE80211_NODE_HT) == 0)
+		return PROCESS;
+#else
 	KASSERT(ni->ni_flags & IEEE80211_NODE_HT, ("not an HT sta"));
+#endif
 
 	/* NB: m_len known to be sufficient */
 	wh = mtod(m, struct ieee80211_qosframe *);
@@ -1428,6 +1439,41 @@ ieee80211_ht_node_age(struct ieee80211_node *ni)
 		}
 	}
 }
+
+#if defined(__HAIKU__)
+/*
+ * Release frames held in the reorder queues of a station for more
+ * than age ticks, as ieee80211_ht_node_age() does, for drivers that
+ * get no BARs: node aging does not run on iv_bss.  Must be called
+ * from the context that passes the station's frames to
+ * ieee80211_input().  Returns non-zero if frames remain held.
+ */
+int
+ieee80211_ampdu_rx_age(struct ieee80211_node *ni, int age)
+{
+	struct ieee80211vap *vap = ni->ni_vap;
+	struct ieee80211_rx_ampdu *rap;
+	int held, tid;
+
+	if ((ni->ni_flags & IEEE80211_NODE_HT) == 0)
+		return (0);
+
+	held = 0;
+	for (tid = 0; tid < WME_NUM_TID; tid++) {
+		rap = &ni->ni_rx_ampdu[tid];
+		if ((rap->rxa_flags & IEEE80211_AGGR_XCHGPEND) == 0 ||
+		    rap->rxa_qframes == 0)
+			continue;
+		if (ticks - rap->rxa_age > age) {
+			vap->iv_stats.is_ampdu_rx_age += rap->rxa_qframes;
+			ampdu_rx_flush(ni, rap);
+		}
+		if (rap->rxa_qframes != 0)
+			held = 1;
+	}
+	return (held);
+}
+#endif
 
 static struct ieee80211_channel *
 findhtchan(struct ieee80211com *ic, struct ieee80211_channel *c, int htflags)

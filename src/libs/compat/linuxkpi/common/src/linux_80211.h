@@ -302,6 +302,10 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 	struct task		rxq_task;
 	struct mbufq		rxq;
 	struct mtx		rxq_mtx;
+#if defined(__HAIKU__)
+	/* Requeues rxq_task to release held A-MPDU reorder frames. */
+	struct callout		rxq_reorder_callout;
+#endif
 
 	/* Scan functions we overload to handle depending on scan mode. */
 	void                    (*ic_scan_curchan)(struct ieee80211_scan_state *,
@@ -356,6 +360,8 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 #if defined(__HAIKU__)
 	/* Driver refused hw_scan offload ("return 1"); stay on sw scan. */
 	bool				hw_scan_refused;
+	bool				rxq_paused;		/* rxq_task must not run (rxq_mtx). */
+	bool				rxq_reorder_held;	/* rxq_task only. */
 #endif
 
 	/* Must be last! */
