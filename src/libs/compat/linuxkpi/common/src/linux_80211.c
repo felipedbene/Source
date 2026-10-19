@@ -5530,6 +5530,42 @@ lkpi_ic_scan_start(struct ieee80211com *ic)
 
 		error = lkpi_80211_mo_hw_scan(hw, vif, hw_req);
 		wiphy_unlock(hw->wiphy);
+#if defined(__HAIKU__)
+		if (error == 1) {
+			/*
+			 * The driver cannot offload this scan (rtw88 has no fw
+			 * scan).  Turn this very scan into a software scan
+			 * instead of cancelling it: the cancel reported the
+			 * scan done with an empty cache to the requester, and
+			 * net_server auto-joins only on the first scan-done
+			 * event per boot, so after every boot the list stayed
+			 * empty and the saved network was never joined, while
+			 * the detached sw_scan_task fallback ran with its own
+			 * flags, invisible to the requester.
+			 * With LKPI_LHW_SCAN_HW cleared the still-running
+			 * net80211 scan drives the channel visits; scan_end
+			 * calls sw_scan_complete which clears SCAN_RUNNING,
+			 * and lkpi_enable_hw_scan() stays off via
+			 * hw_scan_refused.
+			 */
+			LKPI_80211_LHW_SCAN_LOCK(lhw);
+			lhw->hw_scan_refused = true;
+			lhw->scan_flags &= ~LKPI_LHW_SCAN_HW;
+			free(lhw->hw_req, M_LKPI80211);
+			lhw->hw_req = NULL;
+			LKPI_80211_LHW_SCAN_UNLOCK(lhw);
+
+			/* As the sw-scan branch above. */
+			vap->iv_flags_ext &= ~IEEE80211_FEXT_SCAN_OFFLOAD;
+			if (vap->iv_state == IEEE80211_S_SCAN) {
+				wiphy_lock(hw->wiphy);
+				lkpi_hw_conf_idle(hw, false);
+				wiphy_unlock(hw->wiphy);
+			}
+			lkpi_80211_mo_sw_scan_start(hw, vif, vif->addr);
+			return;
+		}
+#endif
 		if (error != 0) {
 			bool scan_done;
 			int e;
