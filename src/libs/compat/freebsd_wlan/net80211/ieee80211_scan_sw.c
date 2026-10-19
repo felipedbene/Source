@@ -287,6 +287,17 @@ ieee80211_swscan_check_scan(const struct ieee80211_scanner *scan,
 		}
 		if ((ic->ic_flags & IEEE80211_F_SCAN) == 0 &&
 		    (flags & IEEE80211_SCAN_FLUSH) == 0 &&
+#if defined(__HAIKU__)
+		    /*
+		     * This shortcut exists to pick a BSS from a warm cache.
+		     * NOPICK/NOJOIN requests want an actual scan with results
+		     * (Haiku's net_server and wpa_supplicant request those
+		     * right after boot or a deauth, when the cache is empty
+		     * but "warm" from a cancelled first scan); answering them
+		     * from the cache returns nothing and reports scan-done.
+		     */
+		    (flags & (IEEE80211_SCAN_NOPICK | IEEE80211_SCAN_NOJOIN)) == 0 &&
+#endif
 		    ieee80211_time_before(ticks, ic->ic_lastscan + vap->iv_scanvalid)) {
 			/*
 			 * We're not currently scanning and the cache is
