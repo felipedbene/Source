@@ -7050,6 +7050,9 @@ lkpi_ic_addba_stop(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap)
 	struct ieee80211_sta *sta;
 	struct ieee80211_ampdu_params params = { };
 	int error;
+#if defined(__HAIKU__)
+	bool ic_locked;
+#endif
 
 	ic = ni->ni_ic;
 	lhw = ic->ic_softc;
@@ -7086,11 +7089,26 @@ lkpi_ic_addba_stop(struct ieee80211_node *ni, struct ieee80211_tx_ampdu *tap)
 	params.tid = tap->txa_tid;
 	params.amsdu = false;
 
+#if defined(__HAIKU__)
+	/*
+	 * As in lkpi_ic_ampdu_rx_stop(): not every caller holds the com lock;
+	 * ht_recv_action_ba_delba() on the RX path does not.
+	 */
+	ic_locked = IEEE80211_IS_LOCKED(ic);
+	if (ic_locked)
+		IEEE80211_UNLOCK(ic);
+#else
 	IEEE80211_UNLOCK(ic);
+#endif
 	wiphy_lock(hw->wiphy);
 	error = lkpi_80211_mo_ampdu_action(hw, vif, &params);
 	wiphy_unlock(hw->wiphy);
+#if defined(__HAIKU__)
+	if (ic_locked)
+		IEEE80211_LOCK(ic);
+#else
 	IEEE80211_LOCK(ic);
+#endif
 	if (error != 0) {
 		ic_printf(ic, "%s: mo_ampdu_action returned %d. ni %p tap %p\n",
 		    __func__, error, ni, tap);
