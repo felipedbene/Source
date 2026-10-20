@@ -4454,6 +4454,7 @@ lkpi_ic_vap_create(struct ieee80211com *ic, const char name[IFNAMSIZ],
 	LKPI_80211_LHW_RXQ_LOCK(lhw);
 	lhw->rxq_stopped = false;
 	LKPI_80211_LHW_RXQ_UNLOCK(lhw);
+	WRITE_ONCE(lhw->vap_deleting, false);
 #endif
 
 	len = sizeof(*lvif);
@@ -4921,7 +4922,11 @@ lkpi_ic_vap_delete(struct ieee80211vap *vap)
 	 * must not reach the ifnet while ieee80211_vap_detach() tears it
 	 * down. Stop and flush the rx queue first, while the nodes the
 	 * queued frames reference still exist.
+	 * The driver may still report TX status until mo_stop() below, but
+	 * ieee80211_tx_complete() must not run once the ifnet and the vap's
+	 * callouts are going away.
 	 */
+	WRITE_ONCE(lhw->vap_deleting, true);
 	lkpi_80211_lhw_rxq_stop_flush(lhw);
 #endif
 	ieee80211_vap_detach(vap);
@@ -9889,6 +9894,11 @@ _lkpi_ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb,
 
 	if (skb == NULL)
 		return;
+#if defined(__HAIKU__)
+	/* See linuxkpi_ieee80211_tx_status_ext(); kfree_skb() frees skb->m. */
+	if (READ_ONCE(HW_TO_LHW(hw)->vap_deleting))
+		return;
+#endif
 
 	m = skb->m;
 	skb->m = NULL;
@@ -9921,6 +9931,22 @@ linuxkpi_ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 	int status;
 
 	skb = txstat->skb;
+#if defined(__HAIKU__)
+	/*
+	 * The vap is being deleted: no rate control or ieee80211_tx_complete().
+	 * kfree_skb() still drops the mbuf and node reference (m_free_func);
+	 * with a free_list the caller frees the skb.
+	 */
+	if (READ_ONCE(HW_TO_LHW(hw)->vap_deleting)) {
+		if (skb == NULL)
+			return;
+		if (txstat->free_list != NULL)
+			list_add_tail(&skb->list, txstat->free_list);
+		else
+			kfree_skb(skb);
+		return;
+	}
+#endif
 	if (skb != NULL && skb->m != NULL) {
 		struct mbuf *m;
 

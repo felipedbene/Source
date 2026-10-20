@@ -362,6 +362,8 @@ struct lkpi_hw {	/* name it mac80211_sc? */
 	bool				hw_scan_refused;
 	bool				rxq_paused;		/* rxq_task must not run (rxq_mtx). */
 	bool				rxq_reorder_held;	/* rxq_task only. */
+	/* lkpi_ic_vap_delete() is tearing the vap down: no TX completion. */
+	bool				vap_deleting;
 #endif
 
 	/* Must be last! */
