@@ -28,6 +28,11 @@
 int32_t _get_ticks();
 #define ticks (_get_ticks())
 
+/* The same count in 64 bits (FreeBSD's ticksl): ticks is its low 32 bits;
+ * never wraps in practice. */
+int64_t _get_ticksl(void);
+#define ticksl (_get_ticksl())
+
 
 /* sysinit */
 enum sysinit_elem_order {

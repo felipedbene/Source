@@ -15,6 +15,13 @@ _get_ticks()
 }
 
 
+int64_t
+_get_ticksl(void)
+{
+	return USEC_2_TICKS(system_time());
+}
+
+
 void
 getmicrouptime(struct timeval *tvp)
 {
