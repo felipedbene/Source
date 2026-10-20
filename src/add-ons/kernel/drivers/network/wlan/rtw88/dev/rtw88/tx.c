@@ -176,12 +176,64 @@ static void rtw_tx_report_enable(struct rtw_dev *rtwdev,
 	pkt_info->report = true;
 }
 
+#if defined(__HAIKU__)
+static void rtw_tx_report_tx_status(struct rtw_dev *rtwdev,
+				    struct sk_buff *skb, bool acked);
+
+/*
+ * Complete the frames waiting for a TX report as not acked, so net80211
+ * runs their M_TXCB callbacks (auth/assoc, BAR, nulldata) rather than
+ * waiting for its own timeouts, once they have been queued for the full
+ * timeout. rtw_tx_report_enqueue() re-arms the timer after dropping
+ * q_lock, so the timer can fire just as a frame is queued whose report is
+ * still on its way. The queue is in enqueue order; re-arm for the oldest
+ * frame left. Ages are taken modulo 2^32, exact for any age under ~24.8
+ * days. Complete outside q_lock so a large purge does not hold up enqueue.
+ */
+static uint32_t rtw_tx_report_fail(struct rtw_dev *rtwdev)
+{
+	struct rtw_tx_report *tx_report = &rtwdev->tx_report;
+	struct sk_buff_head purged;
+	struct sk_buff *skb;
+	unsigned long flags;
+	uint32_t age = 0, count;
+	bool rearm = false;
+
+	__skb_queue_head_init(&purged);
+
+	spin_lock_irqsave(&tx_report->q_lock, flags);
+	while ((skb = skb_peek(&tx_report->queue)) != NULL) {
+		age = (uint32_t)jiffies - (uint32_t)(uintptr_t)
+		    IEEE80211_SKB_CB(skb)->status.status_driver_data[1];
+		if ((int32_t)age < (int32_t)RTW_TX_PROBE_TIMEOUT) {
+			rearm = true;
+			break;
+		}
+		__skb_unlink(skb, &tx_report->queue);
+		__skb_queue_tail(&purged, skb);
+	}
+	spin_unlock_irqrestore(&tx_report->q_lock, flags);
+
+	if (rearm)
+		mod_timer(&tx_report->purge_timer,
+			  jiffies + (RTW_TX_PROBE_TIMEOUT - age));
+
+	count = skb_queue_len(&purged);
+	while ((skb = __skb_dequeue(&purged)) != NULL)
+		rtw_tx_report_tx_status(rtwdev, skb, false);
+
+	return count;
+}
+#endif
+
 void rtw_tx_report_purge_timer(struct timer_list *t)
 {
 	struct rtw_dev *rtwdev = timer_container_of(rtwdev, t,
 						    tx_report.purge_timer);
+#if !defined(__HAIKU__)
 	struct rtw_tx_report *tx_report = &rtwdev->tx_report;
 	unsigned long flags;
+#endif
 
 #if defined(__linux__)
 	if (skb_queue_len(&tx_report->queue) == 0)
@@ -195,11 +247,17 @@ void rtw_tx_report_purge_timer(struct timer_list *t)
 #elif defined(__FreeBSD__)
 	uint32_t qlen;
 
+#if defined(__HAIKU__)
+	qlen = rtw_tx_report_fail(rtwdev);
+	if (qlen == 0)
+		return;
+#else
 	spin_lock_irqsave(&tx_report->q_lock, flags);
 	qlen = skb_queue_len(&tx_report->queue);
 	if (qlen > 0)
 		skb_queue_purge(&tx_report->queue);
 	spin_unlock_irqrestore(&tx_report->q_lock, flags);
+#endif
 
 	/*
 	 * XXX while there could be a new enqueue in the queue
@@ -224,6 +282,15 @@ void rtw_tx_report_enqueue(struct rtw_dev *rtwdev, struct sk_buff *skb, u8 sn)
 	*drv_data = sn;
 
 	spin_lock_irqsave(&tx_report->q_lock, flags);
+#if defined(__HAIKU__)
+	/*
+	 * Enqueue time for the purge timer, stamped under q_lock to keep the
+	 * queue in time order. Slot 0 holds the sn; slot 1 held only
+	 * rtw_pci_tx_data, done with once the frame left the ring.
+	 */
+	IEEE80211_SKB_CB(skb)->status.status_driver_data[1] =
+	    (void *)(uintptr_t)(uint32_t)jiffies;
+#endif
 	__skb_queue_tail(&tx_report->queue, skb);
 	spin_unlock_irqrestore(&tx_report->q_lock, flags);
 
@@ -678,7 +745,12 @@ static void rtw_txq_push(struct rtw_dev *rtwdev,
 		ret = rtw_txq_push_skb(rtwdev, rtwtxq, skb);
 		if (ret) {
 #if defined(__FreeBSD__)
+#if defined(__HAIKU__)
+			/* Complete with an error so M_TXCB callbacks run. */
+			ieee80211_free_txskb(rtwdev->hw, skb);
+#else
 			dev_kfree_skb_any(skb);
+#endif
 			rtw_err(rtwdev, "failed to push skb, ret %d\n", ret);
 #else
 			rtw_err(rtwdev, "failed to pusk skb, ret %d\n", ret);
