@@ -330,7 +330,10 @@ configure_wireless(const char* name, char* const* args, int32 argCount)
 		case SCAN:
 		{
 			status_t status = device.Scan(true, true);
-			if (status != B_OK) {
+			if (status == B_TIMED_OUT) {
+				fprintf(stderr, "%s: Scan on \"%s\" did not complete in time, "
+					"showing cached networks.\n", kProgramName, name);
+			} else if (status != B_OK) {
 				fprintf(stderr, "%s: Scan on \"%s\" failed: %s\n", kProgramName,
 					name, strerror(status));
 				exit(1);
