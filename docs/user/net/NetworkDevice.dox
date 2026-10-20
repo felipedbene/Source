@@ -570,6 +570,8 @@
 
 	\return B_OK if the operation was performed successfully or an error code
 		otherwise.
+	\retval B_TIMED_OUT \a wait was set and the scan did not complete within
+		30 seconds; results gathered so far can still be retrieved.
 
 	\since Haiku R1
 */

@@ -37,6 +37,10 @@ extern "C" {
 namespace {
 
 
+// One pass of an active background scan over both bands can take ~17 s
+static const bigtime_t kScanTimeout = 30000000LL;
+
+
 struct ie_data {
 	uint8	type;
 	uint8	length;
@@ -803,8 +807,10 @@ BNetworkDevice::Scan(bool wait, bool forceRescan)
 		struct ieee80211req dummy;
 		status = set_80211(Name(), IEEE80211_IOC_HAIKU_COMPAT_WLAN_UP, &dummy,
 			sizeof(dummy));
-		if (status != B_OK)
+		if (status != B_OK) {
+			delete listener;
 			return status;
+		}
 
 		status = set_80211(Name(), IEEE80211_IOC_SCAN_REQ, &request,
 			sizeof(request));
@@ -823,9 +829,24 @@ BNetworkDevice::Scan(bool wait, bool forceRescan)
 		return status;
 	}
 
-	while (wait_for_thread(listener->Run(), NULL) == B_INTERRUPTED)
+	// Take the messenger before Run(): afterwards the listener may delete
+	// itself at any time.
+	BMessenger messenger(listener);
+	thread_id thread = listener->Run();
+	bigtime_t deadline = system_time() + kScanTimeout;
+	status_t result;
+	do {
+		status = wait_for_thread_etc(thread, B_ABSOLUTE_TIMEOUT, deadline,
+			&result);
+	} while (status == B_INTERRUPTED);
+	if (status != B_TIMED_OUT)
+		return B_OK;
+
+	// The scan-done event never arrived, stop the listener ourselves
+	messenger.SendMessage(B_QUIT_REQUESTED);
+	while (wait_for_thread(thread, &result) == B_INTERRUPTED)
 		;
-	return B_OK;
+	return B_TIMED_OUT;
 }
 
 
